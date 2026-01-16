@@ -16,7 +16,7 @@ class Forecaster(nn.Module):
         use_lags: bool = False,
         use_feat_idx_emb: bool = False,
         use_time_feat: bool = False,
-        lags_list: List[int] = None,
+        lags_list: List[int] = [],
         feat_idx_emb_dim: int = 1,
         time_feat_dim: int = 1,
         use_scaling: bool = False,
