@@ -172,3 +172,22 @@ log/
 *.AppleDouble
 *.LSOverride
 *__MACOSX
+
+# Icon must end with two \r characters
+Icon
+
+# Thumbnails / metadata
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Volumes / network
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.VolumeIcon.icns
+
+# iCloud placeholders
+*.icloud
