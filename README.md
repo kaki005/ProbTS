@@ -65,7 +65,7 @@ ProbTS includes both classical time-series models, specializing in long-term poi
 
 ### Foundation Models
 
-| **Model** | **Any Horizon** | **Estimation** | **Decoding Scheme** | **Class Path** | **Model Size** | 
+| **Model** | **Any Horizon** | **Estimation** | **Decoding Scheme** | **Class Path** | **Model Size** |
 | --- | --- | --- | --- | --- | --- |
 | [Lag-Llama](https://arxiv.org/abs/2310.08278) | &#x2714; | Probabilistic | AR | `probts.model.forecaster.prob_forecaster.LagLlama` | - |
 | [ForecastPFN](https://arxiv.org/abs/2311.01933) | &#x2714; | Point | NAR | `probts.model.forecaster.point_forecaster.ForecastPFN` | - |
@@ -136,7 +136,7 @@ git reset --hard bb125c14a05e4231636d6b64f8951d5fe96da1dc
 
 For a complete dataset list, refer to the [Datasets Overview](./docs/documentation/README.md#datasets-overview).
 
-- **Short-Term Forecasting**: We use datasets from [GluonTS](https://github.com/awslabs/gluonts). 
+- **Short-Term Forecasting**: We use datasets from [GluonTS](https://github.com/awslabs/gluonts).
     Configure the datasets using `--data.data_manager.init_args.dataset {DATASET_NAME}`. You can choose from multivariate or univariate datasets as per your requirement.
     ```bash
     ['exchange_rate_nips', 'electricity_nips', 'traffic_nips', 'solar_nips', 'wiki2000_nips']
@@ -159,7 +159,7 @@ For a complete dataset list, refer to the [Datasets Overview](./docs/documentati
 
 - **Using Datasets from Monash Time Series Forecasting Repository**: To use datasets from the [Monash Time Series Forecasting Repository](https://forecastingdata.org/), follow these steps:
 
-    1. **Download the Dataset**: 
+    1. **Download the Dataset**:
     - Navigate to the target dataset, such as the [Electricity Hourly Dataset](https://zenodo.org/records/4656140).
     - Download the `.tsf` file and place it in your local `datasets` directory (e.g., `./datasets`).
 
@@ -168,7 +168,7 @@ For a complete dataset list, refer to the [Datasets Overview](./docs/documentati
         ```bash
         --data.data_manager.init_args.dataset {DATASET_NAME} \
         --data.data_manager.init_args.data_path /path/to/data_file.tsf \
-        --data.data_manager.init_args.freq {FREQ} 
+        --data.data_manager.init_args.freq {FREQ}
         ```
 
     - **Example Configuration**:
@@ -197,7 +197,7 @@ bash scripts/prepare_tsfm_checkpoints.sh # By downloading, you agree to the orig
 Specify `--config` with a specific configuration file to reproduce results of point or probabilistic models on commonly used long- and short-term forecasting datasets. Configuration files are included in the [config](./config/) folder.
 
 To run models:
-```bash 
+```bash
 bash run.sh
 ```
 
@@ -205,20 +205,20 @@ Experimental results reproduction:
 
 - **Long-term Forecasting:**
 
-    ```bash 
+    ```bash
     bash scripts/reproduce_ltsf_results.sh
     ```
 
 
 - **Short-term Forecasting:**
 
-    ```bash 
+    ```bash
     bash scripts/reproduce_stsf_results.sh
     ```
 
 - **Time Series Foundation Models:**
 
-    ```bash 
+    ```bash
     bash scripts/reproduce_tsfm_results.sh
     ```
 
@@ -226,7 +226,7 @@ Experimental results reproduction:
 
 For short-term forecasting scenarios, datasets and corresponding `context_length` and `prediction_length` are automatically obtained from [GluonTS](https://github.com/awslabs/gluonts). Use the following command:
 
-```bash 
+```bash
 python run.py --config config/path/to/model.yaml \
                 --data.data_manager.init_args.path /path/to/datasets/ \
                 --trainer.default_root_dir /path/to/log_dir/ \
@@ -235,6 +235,7 @@ python run.py --config config/path/to/model.yaml \
 See full `DATASET_NAME` list:
 ```python
 from gluonts.dataset.repository import dataset_names
+
 print(dataset_names)
 ```
 
@@ -242,17 +243,17 @@ print(dataset_names)
 
 For long-term forecasting scenarios, `context_length` and `prediction_length` must be explicitly assigned:
 
-```bash 
+```bash
 python run.py --config config/path/to/model.yaml \
                 --data.data_manager.init_args.path /path/to/datasets/ \
                 --trainer.default_root_dir /path/to/log_dir/ \
                 --data.data_manager.init_args.dataset {DATASET_NAME} \
                 --data.data_manager.init_args.context_length {CTX_LEN} \
-                --data.data_manager.init_args.prediction_length {PRED_LEN} 
+                --data.data_manager.init_args.prediction_length {PRED_LEN}
 ```
 
 `DATASET_NAME` options:
-```bash 
+```bash
 ['etth1', 'etth2','ettm1','ettm2','traffic_ltsf', 'electricity_ltsf', 'exchange_ltsf', 'illness_ltsf', 'weather_ltsf', 'caiso', 'nordpool']
 ```
 
@@ -267,13 +268,13 @@ ProbTS has been updated to support varied-horizon forecasting by enabling the sp
 
 To quickly train and evaluate ElasTST:
 
-```bash 
+```bash
 bash scripts/run_elastst.sh
 ```
 
 To quickly set up varied-horizon training:
 
-```bash 
+```bash
 bash scripts/run_varied_hor_training.sh
 ```
 
@@ -309,7 +310,7 @@ Special thanks to the following repositories for their open-sourced code bases a
 
 - [GluonTS](https://github.com/awslabs/gluonts)
 - [PyTorch-TS](https://github.com/zalandoresearch/pytorch-ts)
-- [TSLib](https://github.com/libts/tslib) 
+- [TSLib](https://github.com/libts/tslib)
 - [NeuralForecast](https://github.com/Nixtla/neuralforecast)
 
 ### Official Implementations

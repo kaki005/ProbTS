@@ -9,8 +9,9 @@
 
 
 import torch
-import torch.nn as nn
+from torch import nn
 from torch.distributions import Normal
+
 
 class FlowModel(nn.Module):
     def __init__(self, target_dim, f_hidden_size, conditional_length, dequantize):
@@ -34,7 +35,7 @@ class FlowModel(nn.Module):
     @property
     def scale(self):
         return self.__scale
-    
+
     @scale.setter
     def scale(self, scale):
         self.__scale = scale
@@ -73,7 +74,7 @@ class FlowModel(nn.Module):
 
 
 class BatchNorm(nn.Module):
-    """ Flow Model BatchNorm layer """
+    """Flow Model BatchNorm layer"""
 
     def __init__(self, input_size, momentum=0.9, eps=1e-5):
         super().__init__()
@@ -112,7 +113,7 @@ class BatchNorm(nn.Module):
 
         # compute log_abs_det_jacobian (cf RealNVP paper)
         log_abs_det_jacobian = self.log_gamma - 0.5 * torch.log(var + self.eps)
-        
+
         return y, log_abs_det_jacobian.expand_as(x)
 
     def inverse(self, y, cond_y=None):
@@ -132,7 +133,7 @@ class BatchNorm(nn.Module):
 
 
 class FlowSequential(nn.Sequential):
-    """ Container for layers of a normalizing flow """
+    """Container for layers of a normalizing flow"""
 
     def forward(self, x, y):
         sum_log_abs_det_jacobians = 0

@@ -13,14 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import math
-from functools import cached_property
+import os
+from collections.abc import Iterable, Iterator
 from enum import Enum
+from functools import cached_property
 from pathlib import Path
-from typing import Iterable, Iterator
 
-import datasets
+import pyarrow.compute as pc
 from dotenv import load_dotenv
 from gluonts.dataset import DataEntry
 from gluonts.dataset.common import ProcessDataEntry
@@ -29,8 +29,9 @@ from gluonts.itertools import Map
 from gluonts.time_feature import norm_freq_str
 from gluonts.transform import Transformation
 from pandas.tseries.frequencies import to_offset
-import pyarrow.compute as pc
 from toolz import compose
+
+import datasets
 
 # add for probts transform
 from probts.data.data_utils.data_utils import get_rolling_test_of_gift_eval
@@ -130,9 +131,7 @@ class GiftEvalDataset:
         )
         gluonts_dataset = Map(compose(process, itemize_start), self.hf_dataset)
         if self.to_univariate:
-            gluonts_dataset = MultivariateToUnivariate("target").apply(
-                gluonts_dataset
-            )
+            gluonts_dataset = MultivariateToUnivariate("target").apply(gluonts_dataset)
         return gluonts_dataset
 
     @cached_property
@@ -222,7 +221,9 @@ class GiftEvalDataset:
 
     @property
     def test_dataset(self) -> TrainingDataset:
-        print(f"BETA version: generating test datasets for gift eval, should contain {self.windows} windows.")
+        print(
+            f"BETA version: generating test datasets for gift eval, should contain {self.windows} windows."
+        )
         test_dataset = get_rolling_test_of_gift_eval(
             dataset=self.gluonts_dataset,
             prediction_length=self.prediction_length,

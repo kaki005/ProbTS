@@ -6,13 +6,12 @@
 # We thank the authors for their contributions.
 # ---------------------------------------------------------------------------------
 
-import re
-import os
-import torch
-import numpy as np
-from typing import Optional, Dict
-import torch.nn as nn
 import importlib
+import os
+import re
+
+import torch
+
 
 def repeat(tensor: torch.Tensor, n: int, dim: int = 0):
     return tensor.repeat_interleave(repeats=n, dim=dim)
@@ -24,12 +23,11 @@ def extract(a, t, x_shape):
     return out.reshape(batch_size, *((1,) * (len(x_shape) - 1))).to(t.device)
 
 
-    
 def weighted_average(
     x: torch.Tensor,
-    weights: Optional[torch.Tensor] = None,
+    weights: torch.Tensor | None = None,
     dim: int = None,
-    reduce: str = 'mean',
+    reduce: str = "mean",
 ):
     """
     Computes the weighted average of a given tensor across a given dim, masking
@@ -46,7 +44,7 @@ def weighted_average(
     """
     if weights is not None:
         weighted_tensor = torch.where(weights != 0, x * weights, torch.zeros_like(x))
-        if reduce != 'mean':
+        if reduce != "mean":
             return weighted_tensor
         sum_weights = torch.clamp(
             weights.sum(dim=dim) if dim else weights.sum(), min=1.0
@@ -56,25 +54,25 @@ def weighted_average(
         ) / sum_weights
     else:
         return x.mean(dim=dim) if dim else x
-    
-    
+
+
 def convert_to_list(s):
-    '''
+    """
     Convert prediction length strings into list
     e.g., '96-192-336-720' will be convert into [96,192,336,720]
     Input: str, list, int
     Returns: list
-    '''
-    if (type(s).__name__=='int'):
+    """
+    if type(s).__name__ == "int":
         return [s]
-    elif (type(s).__name__=='list'):
+    elif type(s).__name__ == "list":
         return s
-    elif (type(s).__name__=='str'):
-        elements = re.split(r'\D+', s)
+    elif type(s).__name__ == "str":
+        elements = re.split(r"\D+", s)
         return list(map(int, elements))
     else:
         return None
-    
+
 
 def find_best_epoch(ckpt_folder):
     """
@@ -83,22 +81,23 @@ def find_best_epoch(ckpt_folder):
     """
     pattern = r"epoch=(\d+)-val_CRPS=([0-9]*\.[0-9]+)"
     ckpt_files = os.listdir(ckpt_folder)  # List of checkpoint files
-    
+
     best_ckpt = None
     best_epoch = None
     best_crps = float("inf")  # Start with an infinitely large CRPS
-    
+
     for filename in ckpt_files:
         match = re.search(pattern, filename)
         if match:
             epoch = int(match.group(1))  # Extract epoch number
             crps = float(match.group(2))  # Extract CRPS value
-            
+
             if crps < best_crps:  # If this is the lowest CRPS found so far
                 best_crps = crps
                 best_ckpt = filename
                 best_epoch = epoch  # Store the best epoch number
     return best_epoch, best_ckpt
+
 
 def ensure_list(input_value, default_value=None):
     """

@@ -8,7 +8,6 @@
 # ---------------------------------------------------------------------------------
 
 
-from typing import Optional
 import numpy as np
 from gluonts.time_feature import get_seasonality
 
@@ -64,12 +63,13 @@ def mase(
     diff = np.mean(np.abs(target - forecast), axis=1)
     mase = diff / seasonal_error
     # if seasonal_error is 0, set mase to 0
-    mase = mase.filled(0)  
+    mase = mase.filled(0)
     return np.mean(mase)
+
 
 def calculate_seasonal_error(
     past_data: np.ndarray,
-    freq: Optional[str] = None,
+    freq: str | None = None,
 ):
     r"""
     .. math::
@@ -89,7 +89,7 @@ def calculate_seasonal_error(
         # logging.info('The seasonal frequency is larger than the length of the
         # time series. Reverting to freq=1.')
         forecast_freq = 1
-        
+
     y_t = past_data[:, :-forecast_freq]
     y_tm = past_data[:, forecast_freq:]
 
@@ -97,7 +97,6 @@ def calculate_seasonal_error(
     mean_diff = np.expand_dims(mean_diff, axis=1)
 
     return mean_diff
-
 
 
 def mape(target: np.ndarray, forecast: np.ndarray) -> float:
@@ -119,9 +118,8 @@ def smape(target: np.ndarray, forecast: np.ndarray) -> float:
 
     See [HA21]_ for more details.
     """
-    return 2 * np.mean(
-        np.abs(target - forecast) / (np.abs(target) + np.abs(forecast))
-    )
+    return 2 * np.mean(np.abs(target - forecast) / (np.abs(target) + np.abs(forecast)))
+
 
 def quantile_loss(target: np.ndarray, forecast: np.ndarray, q: float) -> float:
     r"""
@@ -131,8 +129,12 @@ def quantile_loss(target: np.ndarray, forecast: np.ndarray, q: float) -> float:
     """
     return 2 * np.abs((forecast - target) * ((target <= forecast) - q))
 
-def scaled_quantile_loss(target: np.ndarray, forecast: np.ndarray, q: float, seasonal_error) -> np.ndarray:
+
+def scaled_quantile_loss(
+    target: np.ndarray, forecast: np.ndarray, q: float, seasonal_error
+) -> np.ndarray:
     return quantile_loss(target, forecast, q) / seasonal_error
+
 
 def coverage(target: np.ndarray, forecast: np.ndarray) -> float:
     r"""

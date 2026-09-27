@@ -9,13 +9,15 @@
 
 
 import copy
+
 import torch
-import torch.nn as nn
-from probts.model.nn.prob.flow_model import FlowModel, BatchNorm, FlowSequential
+from torch import nn
+
+from probts.model.nn.prob.flow_model import BatchNorm, FlowModel, FlowSequential
 
 
 class LinearMaskedCoupling(nn.Module):
-    """ Modified RealNVP Coupling Layers per the MAF paper """
+    """Modified RealNVP Coupling Layers per the MAF paper"""
 
     def __init__(self, input_size, hidden_size, n_hidden, mask, cond_label_size=None):
         super().__init__()
@@ -96,7 +98,7 @@ class RealNVP(FlowModel):
         f_hidden_size,
         conditional_length,
         dequantize,
-        batch_norm=True
+        batch_norm=True,
     ):
         super().__init__(target_dim, f_hidden_size, conditional_length, dequantize)
 

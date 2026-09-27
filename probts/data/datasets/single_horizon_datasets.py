@@ -6,32 +6,35 @@
 # ---------------------------------------------------------------------------------
 
 
-from torch.utils.data import IterableDataset
-from gluonts.env import env
 from gluonts.dataset.common import Dataset
-from gluonts.itertools import Cyclic
 from gluonts.dataset.field_names import FieldName
+from gluonts.env import env
+from gluonts.itertools import Cyclic
 from gluonts.transform import (
-    SelectFields,
-    Transformation,
-    Chain,
-    InstanceSplitter,
-    ValidationSplitSampler,
-    ExpectedNumInstanceSampler,
-    RenameFields,
-    AsNumpyArray,
-    ExpandDimArray,
     AddObservedValuesIndicator,
     AddTimeFeatures,
-    VstackFeatures,
+    AsNumpyArray,
+    Chain,
+    ExpectedNumInstanceSampler,
+    InstanceSplitter,
+    RenameFields,
+    SelectFields,
     SetFieldIfNotPresent,
     TargetDimIndicator,
+    Transformation,
     TransformedDataset,
+    ValidationSplitSampler,
+    VstackFeatures,
 )
-from probts.data.data_utils.time_features import fourier_time_features_from_frequency, AddCustomizedTimeFeatures
+from torch.utils.data import IterableDataset
+
+from probts.data.data_utils.time_features import (
+    AddCustomizedTimeFeatures,
+    fourier_time_features_from_frequency,
+)
 
 
-class SingleHorizonDataset():
+class SingleHorizonDataset:
     """
     SingleHorizonDataset: Handles dataset transformation and instance splitting for single-horizon forecasting tasks.
 
@@ -48,6 +51,7 @@ class SingleHorizonDataset():
     multivariate : bool, optional, default=True
         Indicates if the dataset contains multiple target variables.
     """
+
     def __init__(
         self,
         input_names: list,
@@ -55,7 +59,7 @@ class SingleHorizonDataset():
         context_length: int,
         prediction_length: int,
         freq: str,
-        multivariate: bool = True
+        multivariate: bool = True,
     ):
         super().__init__()
         self.input_names_ = input_names
@@ -85,12 +89,11 @@ class SingleHorizonDataset():
             min_past=self.history_length,
             min_future=self.prediction_length,
         )
-        
+
         self.test_sampler = ValidationSplitSampler(
             min_past=self.history_length,
             min_future=self.prediction_length,
         )
-
 
     def create_transformation(self, data_stamp=None) -> Transformation:
         """
@@ -111,7 +114,7 @@ class SingleHorizonDataset():
             if self.freq in ["M", "W", "D", "B", "H", "min", "T"]:
                 time_features = fourier_time_features_from_frequency(self.freq)
             else:
-                time_features = fourier_time_features_from_frequency('D')
+                time_features = fourier_time_features_from_frequency("D")
             self.time_feat_dim = len(time_features) * 2
             time_feature_func = AddTimeFeatures
         else:
@@ -175,8 +178,8 @@ class SingleHorizonDataset():
         if auto_search:
             past_length = self.context_length + self.prediction_length
         else:
-            past_length=self.history_length
-        
+            past_length = self.history_length
+
         return InstanceSplitter(
             target_field=FieldName.TARGET,
             is_pad_field=FieldName.IS_PAD,
@@ -198,7 +201,9 @@ class SingleHorizonDataset():
             )
         )
 
-    def get_iter_dataset(self, dataset: Dataset, mode: str, data_stamp=None, auto_search=False) -> IterableDataset:
+    def get_iter_dataset(
+        self, dataset: Dataset, mode: str, data_stamp=None, auto_search=False
+    ) -> IterableDataset:
         """
         Creates an iterable dataset for training, validation, or testing.
 
@@ -219,25 +224,23 @@ class SingleHorizonDataset():
         assert mode in ["train", "val", "test"]
 
         transform = self.create_transformation(data_stamp)
-        if mode == 'train':
+        if mode == "train":
             with env._let(max_idle_transforms=100):
                 instance_splitter = self.create_instance_splitter(mode)
         else:
-            instance_splitter = self.create_instance_splitter(mode, auto_search=auto_search)
-
+            instance_splitter = self.create_instance_splitter(
+                mode, auto_search=auto_search
+            )
 
         input_names = self.input_names_
 
         iter_dataset = TransformedIterableDataset(
             dataset,
-            transform=transform
-            + instance_splitter
-            + SelectFields(input_names),
-            is_train=True if mode == 'train' else False
+            transform=transform + instance_splitter + SelectFields(input_names),
+            is_train=True if mode == "train" else False,
         )
 
         return iter_dataset
-
 
 
 class TransformedIterableDataset(IterableDataset):
@@ -253,11 +256,9 @@ class TransformedIterableDataset(IterableDataset):
     is_train : bool, optional, default=True
         Whether the dataset is used for training.
     """
+
     def __init__(
-        self,
-        dataset: Dataset,
-        transform: Transformation,
-        is_train: bool = True
+        self, dataset: Dataset, transform: Transformation, is_train: bool = True
     ):
         super().__init__()
 

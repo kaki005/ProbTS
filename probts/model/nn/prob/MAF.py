@@ -9,11 +9,13 @@
 
 
 import math
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 from torch.distributions import Normal
-from probts.model.nn.prob.flow_model import FlowModel, BatchNorm, FlowSequential
+
+from probts.model.nn.prob.flow_model import BatchNorm, FlowModel, FlowSequential
 
 
 def create_masks(
@@ -53,14 +55,14 @@ def create_masks(
 
     # construct masks
     masks = []
-    for (d0, d1) in zip(degrees[:-1], degrees[1:]):
+    for d0, d1 in zip(degrees[:-1], degrees[1:]):
         masks += [(d1.unsqueeze(-1) >= d0.unsqueeze(0)).float()]
 
     return masks, degrees[0]
 
 
 class MaskedLinear(nn.Linear):
-    """ MADE building block layer """
+    """MADE building block layer"""
 
     def __init__(self, input_size, n_outputs, mask, cond_label_size=None):
         super().__init__(input_size, n_outputs)

@@ -6,14 +6,14 @@ name = "ProbTS"
 version = "0.1.0"
 description = "Benchmarking Point and Distributional Forecasting across Diverse Prediction Horizons"
 authors = [
-    {name = "Jiawen Zhang"},
-    {name = "Xumeng Wen"},
-    {name = "Zhenwei Zhang"},
-    {name = "Shun Zhen"},
+    { name = "Jiawen Zhang" },
+    { name = "Xumeng Wen" },
+    { name = "Zhenwei Zhang" },
+    { name = "Shun Zhen" },
 ]
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = { text = "MIT" }
 
 dependencies = [
     "numpy",
@@ -60,7 +60,7 @@ tsfm = [
     "huggingface_hub>=0.23.0",
     "safetensors",
     "jax[cpu]",
-    "paxml>=1.4.0", # for timesfm
+    "paxml>=1.4.0",            # for timesfm
     "praxis>=1.4.0",
     "einshape>=1.0.0",
     "numpy>=1.26.4",

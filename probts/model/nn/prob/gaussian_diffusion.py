@@ -9,13 +9,15 @@
 
 
 import math
+from functools import partial
+from inspect import isfunction
+
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch import nn, einsum
+from torch import nn
+
 from probts.model.nn.prob.diffusion_layers import DiffusionEmbedding
-from functools import partial
-from inspect import isfunction
 
 
 def default(val, d):
@@ -55,7 +57,7 @@ class ResidualBlock(nn.Module):
     def __init__(self, hidden_size, residual_channels, dilation, target_dim):
         super().__init__()
         self.target_dim = target_dim
-        
+
         self.diffusion_projection = nn.Linear(hidden_size, residual_channels)
 
         if self.target_dim > 1:
@@ -71,7 +73,7 @@ class ResidualBlock(nn.Module):
                 1, 2 * residual_channels, 1, padding=2, padding_mode="circular"
             )
         else:
-            self.dilated_conv = nn.Conv1d(residual_channels,2 * residual_channels,1)
+            self.dilated_conv = nn.Conv1d(residual_channels, 2 * residual_channels, 1)
             self.conditioner_projection = nn.Conv1d(1, 2 * residual_channels, 1)
 
         self.output_projection = nn.Conv1d(residual_channels, 2 * residual_channels, 1)
@@ -128,7 +130,7 @@ class EpsilonTheta(nn.Module):
         residual_channels=8,
         dilation_cycle_length=2,
         residual_hidden=64,
-        padding=2
+        padding=2,
     ):
         super().__init__()
         if target_dim > 1:
@@ -220,7 +222,7 @@ class GaussianDiffusion(nn.Module):
             if beta_schedule == "linear":
                 betas = np.linspace(1e-4, beta_end, diff_steps)
             elif beta_schedule == "quad":
-                betas = np.linspace(1e-4 ** 0.5, beta_end ** 0.5, diff_steps) ** 2
+                betas = np.linspace(1e-4**0.5, beta_end**0.5, diff_steps) ** 2
             elif beta_schedule == "const":
                 betas = beta_end * np.ones(diff_steps)
             elif beta_schedule == "jsd":  # 1/T, 1/(T-1), 1/(T-2), ..., 1
@@ -346,7 +348,7 @@ class GaussianDiffusion(nn.Module):
         b = shape[0]
         img = torch.randn(shape, device=device)
 
-        for i in reversed(range(0, self.num_timesteps)):
+        for i in reversed(range(self.num_timesteps)):
             img = self.p_sample(
                 img, cond, torch.full((b,), i, device=device, dtype=torch.long)
             )
@@ -376,7 +378,7 @@ class GaussianDiffusion(nn.Module):
         xt1, xt2 = map(lambda x: self.q_sample(x, t=t_batched), (x1, x2))
 
         img = (1 - lam) * xt1 + lam * xt2
-        for i in reversed(range(0, t)):
+        for i in reversed(range(t)):
             img = self.p_sample(
                 img, torch.full((b,), i, device=device, dtype=torch.long)
             )

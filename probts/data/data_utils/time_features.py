@@ -6,17 +6,14 @@
 # ---------------------------------------------------------------------------------
 
 
-
-from typing import List
-
 import numpy as np
 import pandas as pd
-from pandas.tseries import offsets
-from pandas.tseries.frequencies import to_offset
 from gluonts.core.component import validated
 from gluonts.dataset.common import DataEntry
 from gluonts.transform import MapTransformation
-from typing import List, Type
+from pandas.tseries import offsets
+from pandas.tseries.frequencies import to_offset
+
 
 class TimeFeature:
     def __init__(self):
@@ -85,7 +82,7 @@ class WeekOfYear(TimeFeature):
         return (index.isocalendar().week - 1) / 52.0 - 0.5
 
 
-def time_features_from_frequency_str(freq_str: str) -> List[TimeFeature]:
+def time_features_from_frequency_str(freq_str: str) -> list[TimeFeature]:
     """
     Returns a list of time features that will be appropriate for the given frequency string.
     Parameters
@@ -142,7 +139,7 @@ def time_features_from_frequency_str(freq_str: str) -> List[TimeFeature]:
     raise RuntimeError(supported_freq_msg)
 
 
-def time_features(dates, freq='h'):
+def time_features(dates, freq="h"):
     return np.vstack([feat(dates) for feat in time_features_from_frequency_str(freq)])
 
 
@@ -186,7 +183,7 @@ def norm_freq_str(freq_str: str) -> str:
     return base_freq
 
 
-def fourier_time_features_from_frequency(freq_str: str) -> List[TimeFeature]:
+def fourier_time_features_from_frequency(freq_str: str) -> list[TimeFeature]:
     offset = to_offset(freq_str)
     granularity = norm_freq_str(offset.name)
     granularity = granularity.upper()
@@ -202,13 +199,13 @@ def fourier_time_features_from_frequency(freq_str: str) -> List[TimeFeature]:
 
     assert granularity in features, f"freq {granularity} not supported"
 
-    feature_classes: List[TimeFeature] = [
+    feature_classes: list[TimeFeature] = [
         FourierDateFeatures(freq=freq) for freq in features[granularity]
     ]
     return feature_classes
 
 
-def get_lags(freq_str:str):
+def get_lags(freq_str: str):
     """
     Calculate appropriate lag values for time series forecasting based on data frequency.
 
@@ -284,7 +281,7 @@ class AddCustomizedTimeFeatures(MapTransformation):
         output_field: str,
         time_features,
         pred_length: int,
-        dtype: Type = np.float32,
+        dtype: type = np.float32,
     ) -> None:
         self.date_features = time_features
         self.pred_length = pred_length
@@ -304,5 +301,5 @@ class AddCustomizedTimeFeatures(MapTransformation):
             data[self.output_field] = self.date_features[:length].astype(np.float64)
         data[self.output_field] = self.date_features[:length].astype(np.float64)
         data[self.output_field] = np.transpose(data[self.output_field])
-        
+
         return data

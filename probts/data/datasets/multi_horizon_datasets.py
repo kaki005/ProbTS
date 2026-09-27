@@ -5,41 +5,41 @@
 # We thank the authors for their contributions.
 # ---------------------------------------------------------------------------------
 
-from torch.utils.data import IterableDataset
-from gluonts.env import env
-from gluonts.dataset.common import Dataset
+import random
+from collections.abc import Iterator
+
+import numpy as np
+from gluonts.dataset.common import DataEntry, Dataset
 from gluonts.dataset.field_names import FieldName
+from gluonts.env import env
 from gluonts.transform import (
-    SelectFields,
-    Transformation,
-    Chain,
-    ValidationSplitSampler,
-    ExpectedNumInstanceSampler,
-    RenameFields,
-    AsNumpyArray,
-    ExpandDimArray,
     AddObservedValuesIndicator,
     AddTimeFeatures,
-    VstackFeatures,
+    AsNumpyArray,
+    Chain,
+    ExpandDimArray,
+    ExpectedNumInstanceSampler,
+    InstanceSampler,
+    RenameFields,
+    SelectFields,
     SetFieldIfNotPresent,
     TargetDimIndicator,
-    InstanceSplitter
+    Transformation,
+    ValidationSplitSampler,
+    VstackFeatures,
 )
-from gluonts.dataset.common import DataEntry
-from gluonts.transform import InstanceSampler
-from gluonts.zebras._util import pad_axis
-from gluonts.dataset.common import DataEntry
 from gluonts.transform._base import FlatMapTransformation
+from gluonts.zebras._util import pad_axis
+from torch.utils.data import IterableDataset
 
-from probts.data.data_utils.time_features import fourier_time_features_from_frequency, AddCustomizedTimeFeatures
+from probts.data.data_utils.time_features import (
+    AddCustomizedTimeFeatures,
+    fourier_time_features_from_frequency,
+)
 from probts.data.datasets.single_horizon_datasets import TransformedIterableDataset
-from typing import Union
-from typing import Iterator, List, Optional, Tuple, Union
-import numpy as np
-import random
 
 
-class MultiHorizonDataset():
+class MultiHorizonDataset:
     """
     MultiHorizonDataset: Supports multi-horizon forecasting by enabling flexible context and prediction lengths.
 
@@ -66,16 +66,17 @@ class MultiHorizonDataset():
     continuous_sample : bool, optional, default=False
         Whether to enable continuous sampling horizons from the train_pred_range.
     """
+
     def __init__(
         self,
         input_names: list,
         freq: str,
-        train_ctx_range: Union[int, list],
-        train_pred_range: Union[int, list],
-        val_ctx_range: Union[int, list],
-        val_pred_range: Union[int, list],
-        test_ctx_range: Union[int, list],
-        test_pred_range: Union[int, list],
+        train_ctx_range: int | list,
+        train_pred_range: int | list,
+        val_ctx_range: int | list,
+        val_pred_range: int | list,
+        test_ctx_range: int | list,
+        test_pred_range: int | list,
         multivariate: bool = True,
         continuous_sample: bool = False,
     ):
@@ -86,9 +87,9 @@ class MultiHorizonDataset():
         self.val_ctx_range = val_ctx_range
         self.val_pred_range = val_pred_range
         self.test_ctx_range = test_ctx_range
-        self.test_pred_range=test_pred_range
+        self.test_pred_range = test_pred_range
         self.continuous_sample = continuous_sample
-        
+
         self.freq = freq
         if multivariate:
             self.expected_ndim = 2
@@ -100,25 +101,25 @@ class MultiHorizonDataset():
         Creates samplers for training, validation, and testing datasets.
         Samplers control how data instances are selected for each mode.
         """
-        
+
         # for training
         train_min_past = min(self.train_ctx_range)
         train_min_future = min(self.train_pred_range)
-        
+
         # for validation
         val_min_past = max(self.val_ctx_range)
         val_min_future = max(self.val_pred_range)
-        
+
         # for testing
-        if (type(self.test_ctx_range).__name__=='list'):
+        if type(self.test_ctx_range).__name__ == "list":
             test_min_past = max(self.test_ctx_range)
         else:
-            test_min_past=self.test_ctx_range
-        
-        if (type(self.test_pred_range).__name__=='list'):
+            test_min_past = self.test_ctx_range
+
+        if type(self.test_pred_range).__name__ == "list":
             test_min_future = max(self.test_pred_range)
         else:
-            test_min_future=self.test_pred_range
+            test_min_future = self.test_pred_range
 
         self.train_sampler = ExpectedNumInstanceSampler(
             num_instances=1.0,
@@ -130,13 +131,12 @@ class MultiHorizonDataset():
             min_past=val_min_past,
             min_future=val_min_future,
         )
-        
+
         self.test_sampler = ValidationSplitSampler(
             min_past=test_min_past,
             min_future=test_min_future,
         )
 
-        
     def create_transformation(self, data_stamp=None, pred_len=None) -> Transformation:
         """
         Creates a transformation pipeline for data preprocessing.
@@ -157,19 +157,19 @@ class MultiHorizonDataset():
             if self.freq in ["M", "W", "D", "B", "H", "min", "T"]:
                 time_features = fourier_time_features_from_frequency(self.freq)
             else:
-                time_features = fourier_time_features_from_frequency('D')
+                time_features = fourier_time_features_from_frequency("D")
             self.time_feat_dim = len(time_features) * 2
             time_feature_func = AddTimeFeatures
         else:
             self.time_feat_dim = data_stamp.shape[-1]
             time_features = data_stamp
             time_feature_func = AddCustomizedTimeFeatures
-            
+
         if pred_len is None:
             pred_len = max(self.train_pred_range)
         else:
             pred_len = max(pred_len)
-            
+
         return Chain(
             [
                 AsNumpyArray(
@@ -232,7 +232,7 @@ class MultiHorizonDataset():
         if mode == "train":
             past_length = self.train_ctx_range
             future_length = self.train_pred_range
-        elif mode == 'val':
+        elif mode == "val":
             past_length = self.val_ctx_range
             if pred_len is None:
                 future_length = self.val_pred_range
@@ -243,13 +243,12 @@ class MultiHorizonDataset():
                 future_length = self.test_pred_range
             else:
                 future_length = pred_len
-                
+
             if auto_search:
                 past_length = [max(self.test_ctx_range) + max(future_length)]
             else:
                 past_length = self.test_ctx_range
-            
-            
+
         return MultiHorizonSplitter(
             target_field=FieldName.TARGET,
             is_pad_field=FieldName.IS_PAD,
@@ -273,8 +272,14 @@ class MultiHorizonDataset():
             )
         )
 
-
-    def get_iter_dataset(self, dataset: Dataset, mode: str, data_stamp=None, pred_len=None, auto_search=False) -> IterableDataset:
+    def get_iter_dataset(
+        self,
+        dataset: Dataset,
+        mode: str,
+        data_stamp=None,
+        pred_len=None,
+        auto_search=False,
+    ) -> IterableDataset:
         """
         Creates an iterable dataset with applied transformations and splitters.
 
@@ -297,23 +302,21 @@ class MultiHorizonDataset():
         assert mode in ["train", "val", "test"]
 
         transform = self.create_transformation(data_stamp, pred_len=pred_len)
-            
-            
-        if mode == 'train':
+
+        if mode == "train":
             with env._let(max_idle_transforms=100):
                 instance_splitter = self.create_instance_splitter(mode)
         else:
-            instance_splitter = self.create_instance_splitter(mode, pred_len=pred_len, auto_search=auto_search)
-
+            instance_splitter = self.create_instance_splitter(
+                mode, pred_len=pred_len, auto_search=auto_search
+            )
 
         input_names = self.input_names_
 
         iter_dataset = TransformedIterableDataset(
             dataset,
-            transform=transform
-            + instance_splitter
-            + SelectFields(input_names),
-            is_train=True if mode == 'train' else False
+            transform=transform + instance_splitter + SelectFields(input_names),
+            is_train=True if mode == "train" else False,
         )
 
         return iter_dataset
@@ -370,12 +373,12 @@ class MultiHorizonSplitter(FlatMapTransformation):
         start_field: str,
         forecast_start_field: str,
         instance_sampler: InstanceSampler,
-        past_length: Union[int, list],
-        future_length: Union[int, list],
+        past_length: int | list,
+        future_length: int | list,
         mode: str,
         lead_time: int = 0,
         output_NTC: bool = True,
-        time_series_fields: List[str] = [],
+        time_series_fields: list[str] = [],
         dummy_value: float = 0.0,
         continuous_sample: bool = False,
     ) -> None:
@@ -387,7 +390,7 @@ class MultiHorizonSplitter(FlatMapTransformation):
         self.past_length = past_length
         self.future_length = future_length
         self.continuous_sample = continuous_sample
-        
+
         self.lead_time = lead_time
         self.output_NTC = output_NTC
         self.ts_fields = time_series_fields
@@ -406,7 +409,7 @@ class MultiHorizonSplitter(FlatMapTransformation):
 
     def _split_array(
         self, array: np.ndarray, idx: int, past_length: int, future_length: int
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> tuple[np.ndarray, np.ndarray]:
         if idx >= past_length:
             past_piece = array[..., idx - past_length : idx]
         else:
@@ -427,20 +430,24 @@ class MultiHorizonSplitter(FlatMapTransformation):
         slice_cols = self.ts_fields + [self.target_field]
         dtype = entry[self.target_field].dtype
         entry = entry.copy()
-        
+
         if is_train:
             if self.continuous_sample:
                 past_len = random.randint(min(self.past_length), max(self.past_length))
-                pred_len = random.randint(min(self.future_length), max(self.future_length))
+                pred_len = random.randint(
+                    min(self.future_length), max(self.future_length)
+                )
             else:
-                past_len = random.choice(self.past_length) 
-                pred_len = random.choice(self.future_length) 
+                past_len = random.choice(self.past_length)
+                pred_len = random.choice(self.future_length)
         else:
             past_len = max(self.past_length)
             pred_len = max(self.future_length)
 
         for ts_field in slice_cols:
-            past_piece, future_piece = self._split_array(entry[ts_field], idx, past_length=past_len, future_length=pred_len)
+            past_piece, future_piece = self._split_array(
+                entry[ts_field], idx, past_length=past_len, future_length=pred_len
+            )
 
             if self.output_NTC:
                 past_piece = past_piece.transpose()
@@ -458,15 +465,15 @@ class MultiHorizonSplitter(FlatMapTransformation):
         entry[self.forecast_start_field] = (
             entry[self.start_field] + idx + self.lead_time
         )
-        entry['context_length'] = past_len
-        entry['prediction_length'] = pred_len
+        entry["context_length"] = past_len
+        entry["prediction_length"] = pred_len
 
         return entry
 
     def flatmap_transform(
-            self, entry: DataEntry, is_train: bool
-        ) -> Iterator[DataEntry]:
+        self, entry: DataEntry, is_train: bool
+    ) -> Iterator[DataEntry]:
         sampled_indices = self.instance_sampler(entry[self.target_field])
-        
+
         for idx in sampled_indices:
             yield self._split_instance(entry, idx, is_train)

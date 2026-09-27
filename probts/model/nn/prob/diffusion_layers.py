@@ -8,20 +8,22 @@
 # ---------------------------------------------------------------------------------
 
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import math
-from linear_attention_transformer import LinearAttentionTransformer
 
-def get_torch_trans(heads=8, layers=1, channels=64,linear=False):
+import torch
+import torch.nn.functional as F
+from linear_attention_transformer import LinearAttentionTransformer
+from torch import nn
+
+
+def get_torch_trans(heads=8, layers=1, channels=64, linear=False):
     if linear:
         encoder_layer = LinearAttentionTransformer(
-            dim = channels,
-            heads = heads,
-            depth = layers,
-            max_seq_len = 4096,
-            n_local_attn_heads = 0
+            dim=channels,
+            heads=heads,
+            depth=layers,
+            max_seq_len=4096,
+            n_local_attn_heads=0,
         )
         return encoder_layer
     else:
@@ -65,7 +67,17 @@ class DiffusionEmbedding(nn.Module):
 
 
 class diff_CSDI(nn.Module):
-    def __init__(self, channels, diffusion_embedding_dim, side_dim, num_steps, nheads, n_layers, inputdim=2, linear=False):
+    def __init__(
+        self,
+        channels,
+        diffusion_embedding_dim,
+        side_dim,
+        num_steps,
+        nheads,
+        n_layers,
+        inputdim=2,
+        linear=False,
+    ):
         super().__init__()
         self.channels = channels
 
@@ -116,7 +128,9 @@ class diff_CSDI(nn.Module):
 
 
 class ResidualBlock(nn.Module):
-    def __init__(self, side_dim, channels, diffusion_embedding_dim, nheads, linear=False):
+    def __init__(
+        self, side_dim, channels, diffusion_embedding_dim, nheads, linear=False
+    ):
         super().__init__()
         self.side_dim = side_dim
         self.diffusion_projection = nn.Linear(diffusion_embedding_dim, channels)
@@ -124,8 +138,12 @@ class ResidualBlock(nn.Module):
         self.mid_projection = Conv1d_with_init(channels, 2 * channels, 1)
         self.output_projection = Conv1d_with_init(channels, 2 * channels, 1)
 
-        self.time_layer = get_torch_trans(heads=nheads, layers=1, channels=channels,linear=linear)
-        self.feature_layer = get_torch_trans(heads=nheads, layers=1, channels=channels,linear=linear)
+        self.time_layer = get_torch_trans(
+            heads=nheads, layers=1, channels=channels, linear=linear
+        )
+        self.feature_layer = get_torch_trans(
+            heads=nheads, layers=1, channels=channels, linear=linear
+        )
 
     def forward_time(self, y, base_shape):
         B, channel, K, L = base_shape
@@ -151,7 +169,9 @@ class ResidualBlock(nn.Module):
         base_shape = x.shape
         x = x.reshape(B, channel, K * L)
 
-        diffusion_emb = self.diffusion_projection(diffusion_emb).unsqueeze(-1)  # (B,channel,1)
+        diffusion_emb = self.diffusion_projection(diffusion_emb).unsqueeze(
+            -1
+        )  # (B,channel,1)
         y = x + diffusion_emb
 
         y = self.forward_time(y, base_shape)

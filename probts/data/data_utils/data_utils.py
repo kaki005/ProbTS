@@ -1,14 +1,17 @@
-from copy import deepcopy
 import math
-import pandas as pd
-import numpy as np
+from copy import deepcopy
 from datetime import datetime
 from distutils.util import strtobool
+
+import numpy as np
+import pandas as pd
 from gluonts.dataset.common import ListDataset
 from gluonts.dataset.field_names import FieldName
 
 
-def split_train_val(train_set, num_test_windows, context_length, prediction_length, freq):
+def split_train_val(
+    train_set, num_test_windows, context_length, prediction_length, freq
+):
     """
     Splits a training dataset into a truncated training set and a validation set.
 
@@ -34,35 +37,43 @@ def split_train_val(train_set, num_test_windows, context_length, prediction_leng
 
         if len(train_seq[FieldName.TARGET].shape) == 1:
             trunc_train_len = train_seq[FieldName.TARGET].shape[0] - offset
-            trunc_train_seq[FieldName.TARGET] = train_seq[FieldName.TARGET][:trunc_train_len]
+            trunc_train_seq[FieldName.TARGET] = train_seq[FieldName.TARGET][
+                :trunc_train_len
+            ]
             univariate = True
         elif len(train_seq[FieldName.TARGET].shape) == 2:
             trunc_train_len = train_seq[FieldName.TARGET].shape[1] - offset
-            trunc_train_seq[FieldName.TARGET] = train_seq[FieldName.TARGET][:, :trunc_train_len]
+            trunc_train_seq[FieldName.TARGET] = train_seq[FieldName.TARGET][
+                :, :trunc_train_len
+            ]
         else:
-            raise ValueError(f"Invalid Data Shape: {str(len(train_seq[FieldName.TARGET].shape))}")
+            raise ValueError(
+                f"Invalid Data Shape: {len(train_seq[FieldName.TARGET].shape)!s}"
+            )
 
         trunc_train_list.append(trunc_train_seq)
 
         # construct val set by rolling
         for i in range(num_test_windows):
             val_seq = deepcopy(train_seq)
-            rolling_len = trunc_train_len + prediction_length * (i+1)
+            rolling_len = trunc_train_len + prediction_length * (i + 1)
             if univariate:
-                val_seq[FieldName.TARGET] = val_seq[FieldName.TARGET][trunc_train_len + prediction_length * (i-1) - context_length : rolling_len]
+                val_seq[FieldName.TARGET] = val_seq[FieldName.TARGET][
+                    trunc_train_len
+                    + prediction_length * (i - 1)
+                    - context_length : rolling_len
+                ]
             else:
                 val_seq[FieldName.TARGET] = val_seq[FieldName.TARGET][:, :rolling_len]
-            
+
             val_set_list.append(val_seq)
 
     trunc_train_set = ListDataset(
         trunc_train_list, freq=freq, one_dim_target=univariate
     )
 
-    val_set = ListDataset(
-        val_set_list, freq=freq, one_dim_target=univariate
-    )
-    
+    val_set = ListDataset(val_set_list, freq=freq, one_dim_target=univariate)
+
     return trunc_train_set, val_set
 
 
@@ -84,18 +95,26 @@ def truncate_test(test_set, context_length, prediction_length, freq):
         # truncate train set
         trunc_test_seq = deepcopy(test_seq)
 
-        trunc_test_seq[FieldName.TARGET] = trunc_test_seq[FieldName.TARGET][- (prediction_length * 2 + context_length):]
+        trunc_test_seq[FieldName.TARGET] = trunc_test_seq[FieldName.TARGET][
+            -(prediction_length * 2 + context_length) :
+        ]
 
         trunc_test_list.append(trunc_test_seq)
 
-    trunc_test_set = ListDataset(
-        trunc_test_list, freq=freq, one_dim_target=True
-    )
+    trunc_test_set = ListDataset(trunc_test_list, freq=freq, one_dim_target=True)
 
     return trunc_test_set
 
 
-def get_rolling_test(stage, test_set, border_begin_idx, border_end_idx, rolling_length, pred_len, freq=None):
+def get_rolling_test(
+    stage,
+    test_set,
+    border_begin_idx,
+    border_end_idx,
+    rolling_length,
+    pred_len,
+    freq=None,
+):
     """
     Using rolling windows to build the test dataset.
 
@@ -111,7 +130,9 @@ def get_rolling_test(stage, test_set, border_begin_idx, border_end_idx, rolling_
     Returns:
     - rolling_test_set: Rolling test dataset (ListDataset).
     """
-    num_test_windows = math.ceil(((border_end_idx - border_begin_idx - pred_len) / rolling_length))
+    num_test_windows = math.ceil(
+        (border_end_idx - border_begin_idx - pred_len) / rolling_length
+    )
     print(f"{stage}  pred_len: {pred_len} : num_test_windows: {num_test_windows}")
 
     test_set = next(iter(test_set))
@@ -119,7 +140,9 @@ def get_rolling_test(stage, test_set, border_begin_idx, border_end_idx, rolling_
     for i in range(num_test_windows):
         rolling_test_seq = deepcopy(test_set)
         rolling_end = border_begin_idx + pred_len + i * rolling_length
-        rolling_test_seq[FieldName.TARGET] = rolling_test_seq[FieldName.TARGET][:, :rolling_end]
+        rolling_test_seq[FieldName.TARGET] = rolling_test_seq[FieldName.TARGET][
+            :, :rolling_end
+        ]
         rolling_test_seq_list.append(rolling_test_seq)
 
     rolling_test_set = ListDataset(
@@ -154,13 +177,19 @@ def get_rolling_test_of_gift_eval(dataset, prediction_length, windows):
 
     for i in range(windows):
         rolling_test_seq = deepcopy(dataset)
-        rolling_end = dataset[FieldName.TARGET].shape[-1] - prediction_length * (windows - i)
+        rolling_end = dataset[FieldName.TARGET].shape[-1] - prediction_length * (
+            windows - i
+        )
         if is_univariate:
             rolling_test_seq[FieldName.TARGET] = dataset[FieldName.TARGET][:rolling_end]
         elif len(dataset[FieldName.TARGET].shape) == 2:
-            rolling_test_seq[FieldName.TARGET] = dataset[FieldName.TARGET][:, :rolling_end]
+            rolling_test_seq[FieldName.TARGET] = dataset[FieldName.TARGET][
+                :, :rolling_end
+            ]
         else:
-            raise ValueError(f"Invalid Data Shape: expected 1 or 2 dimensions, got {len(dataset[FieldName.TARGET].shape)}")
+            raise ValueError(
+                f"Invalid Data Shape: expected 1 or 2 dimensions, got {len(dataset[FieldName.TARGET].shape)}"
+            )
         rolling_test_seq_list.append(rolling_test_seq)
 
     rolling_test_set = ListDataset(
@@ -169,8 +198,7 @@ def get_rolling_test_of_gift_eval(dataset, prediction_length, windows):
     return rolling_test_set
 
 
-
-def df_to_mvds(df, freq='H'):
+def df_to_mvds(df, freq="H"):
     """
     Converts a pandas DataFrame to a multivariate ListDataset for GluonTS.
 
@@ -183,9 +211,9 @@ def df_to_mvds(df, freq='H'):
     """
     datasets = []
     for variable in df.keys():
-        ds = {"item_id" : variable, "target" : df[variable], "start": str(df.index[0])}
+        ds = {"item_id": variable, "target": df[variable], "start": str(df.index[0])}
         datasets.append(ds)
-    dataset = ListDataset(datasets,freq=freq)
+    dataset = ListDataset(datasets, freq=freq)
     return dataset
 
 
@@ -333,30 +361,42 @@ def convert_monash_data_to_dataframe(
             contain_equal_length,
         )
 
-def monash_format_convert(loaded_data, frequency, multivariate):
-    series_names = loaded_data['series_name'].values
 
-    if str(frequency) == '10_minutes':
-        freq = '10min'
-    elif str(frequency) == 'daily':
-        freq = 'D'
+def monash_format_convert(loaded_data, frequency, multivariate):
+    series_names = loaded_data["series_name"].values
+
+    if str(frequency) == "10_minutes":
+        freq = "10min"
+    elif str(frequency) == "daily":
+        freq = "D"
     else:
         freq = frequency
 
     if multivariate:
-        timestamps = pd.date_range(start=loaded_data['start_timestamp'][0], periods=len(loaded_data['series_value'][0]), freq=freq)
-        new_df = pd.DataFrame({ 'date': timestamps })
+        timestamps = pd.date_range(
+            start=loaded_data["start_timestamp"][0],
+            periods=len(loaded_data["series_value"][0]),
+            freq=freq,
+        )
+        new_df = pd.DataFrame({"date": timestamps})
 
-        series_df = pd.DataFrame({ series: loaded_data['series_value'][i] for i, series in enumerate(series_names) })
+        series_df = pd.DataFrame(
+            {
+                series: loaded_data["series_value"][i]
+                for i, series in enumerate(series_names)
+            }
+        )
         result_df = pd.concat([new_df, series_df], axis=1)
     else:
         result = []
         for idx, row in loaded_data.iterrows():
-            result.append({
-                'target': np.array(row['series_value'], dtype=np.float32),
-                'start': pd.Period(row['start_timestamp'], freq=freq),
-                'feat_static_cat': np.array([idx], dtype=np.int32),
-                'item_id': idx,
-            })
+            result.append(
+                {
+                    "target": np.array(row["series_value"], dtype=np.float32),
+                    "start": pd.Period(row["start_timestamp"], freq=freq),
+                    "feat_static_cat": np.array([idx], dtype=np.int32),
+                    "item_id": idx,
+                }
+            )
         result_df = pd.DataFrame(result)
     return result_df
