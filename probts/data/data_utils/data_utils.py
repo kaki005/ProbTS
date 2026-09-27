@@ -2,29 +2,41 @@ import math
 from copy import deepcopy
 from datetime import datetime
 from distutils.util import strtobool
+from typing import Any
 
 import numpy as np
 import pandas as pd
-from gluonts.dataset.common import ListDataset
+from gluonts.dataset.common import Dataset, ListDataset
 from gluonts.dataset.field_names import FieldName
 
 
 def split_train_val(
-    train_set, num_test_windows, context_length, prediction_length, freq
-):
+    train_set: Dataset,
+    num_test_windows: int,
+    context_length: int,
+    prediction_length: int,
+    freq: str,
+) -> tuple[ListDataset, ListDataset]:
     """
-    Splits a training dataset into a truncated training set and a validation set.
+    学習データセットを、末尾を切り詰めた学習セットと検証セットに分割する。
 
     Parameters:
-    - train_set: The input training dataset.
-    - num_test_windows: Number of rolling windows for validation.
-    - context_length: Context length for the model.
-    - prediction_length: Prediction horizon for the model.
-    - freq: Data frequency (e.g., 'H' for hourly).
+    ----------
+    train_set : Dataset
+        入力となる学習データセット。
+    num_test_windows : int
+        検証に用いるローリングウィンドウの数。
+    context_length : int
+        モデルのコンテキスト長。
+    prediction_length : int
+        モデルの予測ホライズン。
+    freq : str
+        データの頻度 (例: 'H' は毎時)。
 
     Returns:
-    - trunc_train_set: Truncated training dataset (ListDataset).
-    - val_set: Validation dataset (ListDataset).
+    ----------
+    tuple[ListDataset, ListDataset]
+        切り詰めた学習データセット (trunc_train_set) と検証データセット (val_set) のタプル。
     """
     trunc_train_list = []
     val_set_list = []
@@ -77,18 +89,27 @@ def split_train_val(
     return trunc_train_set, val_set
 
 
-def truncate_test(test_set, context_length, prediction_length, freq):
+def truncate_test(
+    test_set: Dataset, context_length: int, prediction_length: int, freq: str
+) -> ListDataset:
     """
-    Truncates the test dataset to ensure only the last context and prediction lengths are retained.
+    テストデータセットを切り詰め、末尾のコンテキスト長と予測長の分のみを残す。
 
     Parameters:
-    - test_set: The input test dataset.
-    - context_length: Context length for the model.
-    - prediction_length: Prediction horizon for the model.
-    - freq: Data frequency.
+    ----------
+    test_set : Dataset
+        入力となるテストデータセット。
+    context_length : int
+        モデルのコンテキスト長。
+    prediction_length : int
+        モデルの予測ホライズン。
+    freq : str
+        データの頻度。
 
     Returns:
-    - trunc_test_set: Truncated test dataset (ListDataset).
+    ----------
+    ListDataset
+        切り詰めたテストデータセット (trunc_test_set)。
     """
     trunc_test_list = []
     for test_seq in iter(test_set):
@@ -107,28 +128,38 @@ def truncate_test(test_set, context_length, prediction_length, freq):
 
 
 def get_rolling_test(
-    stage,
-    test_set,
-    border_begin_idx,
-    border_end_idx,
-    rolling_length,
-    pred_len,
-    freq=None,
-):
+    stage: str,
+    test_set: Dataset,
+    border_begin_idx: int,
+    border_end_idx: int,
+    rolling_length: int,
+    pred_len: int,
+    freq: str | None = None,
+) -> ListDataset:
     """
-    Using rolling windows to build the test dataset.
+    ローリングウィンドウを用いてテストデータセットを構築する。
 
     Parameters:
-    - stage: Stage name (e.g., 'test', 'val').
-    - test_set: The test dataset.
-    - border_begin_idx: Start index for rolling windows.
-    - border_end_idx: End index for rolling windows.
-    - rolling_length: Gap length of each rolling window.
-    - pred_len: Prediction length.
-    - freq: Data frequency.
+    ----------
+    stage : str
+        ステージ名 (例: 'test', 'val')。
+    test_set : Dataset
+        テストデータセット (先頭の 1 系列のみを使用)。
+    border_begin_idx : int
+        ローリングウィンドウの開始インデックス。
+    border_end_idx : int
+        ローリングウィンドウの終了インデックス。
+    rolling_length : int
+        各ローリングウィンドウ間のずらし幅。
+    pred_len : int
+        予測長。
+    freq : str | None, optional, default=None
+        データの頻度。
 
     Returns:
-    - rolling_test_set: Rolling test dataset (ListDataset).
+    ----------
+    ListDataset
+        ローリングテストデータセット (rolling_test_set)。
     """
     num_test_windows = math.ceil(
         (border_end_idx - border_begin_idx - pred_len) / rolling_length
@@ -151,22 +182,36 @@ def get_rolling_test(
     return rolling_test_set
 
 
-def get_rolling_test_of_gift_eval(dataset, prediction_length, windows):
+def get_rolling_test_of_gift_eval(
+    dataset: Dataset, prediction_length: int, windows: int
+) -> ListDataset:
     """
-    Using rolling windows to build the test dataset for GiftEval.
+    GiftEval 向けに、ローリングウィンドウを用いてテストデータセットを構築する。
+
     https://github.com/SalesforceAIResearch/gift-eval/blob/61ec5e563188bc4b2d7e86f6a7fcc78270607ae7/src/gift_eval/data.py#L213
-    Get the windows from the back of the dataset, for example if the dataset has N time points:
-    - The first window will be from the first time point to the N - prediction_length * windows time point.
-    - The second window will be from the first time point to the N - prediction_length * (windows - 1) time point.
-    - The last window will be from the first time point to the N time point.
+    ウィンドウはデータセットの後方から取得する。例えばデータセットが N 個の時点を持つ場合:
+    - 最初のウィンドウは最初の時点から N - prediction_length * windows 番目の時点まで。
+    - 2 番目のウィンドウは最初の時点から N - prediction_length * (windows - 1) 番目の時点まで。
+    - 最後のウィンドウは最初の時点から N 番目の時点まで。
 
     Parameters:
-    - dataset: The input dataset.
-    - prediction_length: Prediction length.
-    - windows: Number of rolling windows.
+    ----------
+    dataset : Dataset
+        入力データセット (先頭の 1 系列のみを使用し、'freq' キーを含む必要がある)。
+    prediction_length : int
+        予測長。
+    windows : int
+        ローリングウィンドウの数。
 
     Returns:
-    - rolling_test_set: Rolling test dataset (ListDataset).
+    ----------
+    ListDataset
+        ローリングテストデータセット (rolling_test_set)。
+
+    Raises:
+    ----------
+    ValueError
+        データセットが 'freq' キーを含まない場合、またはターゲットの次元数が 1 / 2 以外の場合。
     """
     rolling_test_seq_list = list()
     dataset = next(iter(dataset))
@@ -198,16 +243,21 @@ def get_rolling_test_of_gift_eval(dataset, prediction_length, windows):
     return rolling_test_set
 
 
-def df_to_mvds(df, freq="H"):
+def df_to_mvds(df: pd.DataFrame, freq: str = "H") -> ListDataset:
     """
-    Converts a pandas DataFrame to a multivariate ListDataset for GluonTS.
+    pandas DataFrame を GluonTS 用の多変量 ListDataset に変換する。
 
     Parameters:
-    - df: Input DataFrame where columns represent time series variables.
-    - freq: Data frequency (e.g., 'H' for hourly).
+    ----------
+    df : pd.DataFrame
+        各列が時系列の変数を表す入力 DataFrame。
+    freq : str, optional, default="H"
+        データの頻度 (例: 'H' は毎時)。
 
     Returns:
-    - dataset: Multivariate ListDataset.
+    ----------
+    ListDataset
+        各変数を 1 系列とする多変量 ListDataset。
     """
     datasets = []
     for variable in df.keys():
@@ -218,10 +268,34 @@ def df_to_mvds(df, freq="H"):
 
 
 def convert_monash_data_to_dataframe(
-    full_file_path_and_name,
-    replace_missing_vals_with="NaN",
-    value_column_name="series_value",
-):
+    full_file_path_and_name: str,
+    replace_missing_vals_with: Any = "NaN",
+    value_column_name: str = "series_value",
+) -> tuple[pd.DataFrame, str | None, int | None, bool | None, bool | None]:
+    """
+    Monash 形式 (.tsf) の時系列ファイルを読み込み、pandas DataFrame に変換する。
+
+    Parameters:
+    ----------
+    full_file_path_and_name : str
+        読み込む .tsf ファイルのパス。
+    replace_missing_vals_with : Any, optional, default="NaN"
+        欠損値 ("?") を置き換える値。
+    value_column_name : str, optional, default="series_value"
+        系列の値を格納する列名。
+
+    Returns:
+    ----------
+    tuple[pd.DataFrame, str | None, int | None, bool | None, bool | None]
+        読み込んだ DataFrame (loaded_data)、頻度 (frequency)、予測ホライズン (forecast_horizon)、
+        欠損値を含むかどうか (contain_missing_values)、系列長が等しいかどうか
+        (contain_equal_length) のタプル。メタデータが存在しない項目は None。
+
+    Raises:
+    ----------
+    Exception
+        ファイルの形式が不正な場合 (メタデータ、属性、データセクションの欠落など)。
+    """
     col_names = []
     col_types = []
     all_data = {}
@@ -362,7 +436,28 @@ def convert_monash_data_to_dataframe(
         )
 
 
-def monash_format_convert(loaded_data, frequency, multivariate):
+def monash_format_convert(
+    loaded_data: pd.DataFrame, frequency: str | None, multivariate: bool
+) -> pd.DataFrame:
+    """
+    Monash 形式から読み込んだ DataFrame を、ProbTS で扱う形式の DataFrame に変換する。
+
+    Parameters:
+    ----------
+    loaded_data : pd.DataFrame
+        convert_monash_data_to_dataframe で読み込んだ DataFrame。
+        'series_name', 'start_timestamp', 'series_value' 列を含む必要がある。
+    frequency : str | None
+        データの頻度 ("10_minutes", "daily" は pandas の頻度文字列に変換される)。
+    multivariate : bool
+        True の場合、'date' 列と各系列の列を持つ横持ちの DataFrame を返す。
+        False の場合、各行が 1 系列 (target, start, feat_static_cat, item_id) の DataFrame を返す。
+
+    Returns:
+    ----------
+    pd.DataFrame
+        変換後の DataFrame。
+    """
     series_names = loaded_data["series_name"].values
 
     if str(frequency) == "10_minutes":

@@ -13,11 +13,49 @@ import re
 import torch
 
 
-def repeat(tensor: torch.Tensor, n: int, dim: int = 0):
+def repeat(tensor: torch.Tensor, n: int, dim: int = 0) -> torch.Tensor:
+    """
+    テンソルの各要素を指定した次元方向に n 回繰り返す (repeat_interleave)。
+
+    Parameters:
+    ----------
+    tensor : torch.Tensor
+        繰り返し対象のテンソル。
+    n : int
+        繰り返し回数。
+    dim : int, optional, default=0
+        繰り返しを行う次元。
+
+    Returns:
+    ----------
+    torch.Tensor
+        繰り返し後のテンソル。
+    """
     return tensor.repeat_interleave(repeats=n, dim=dim)
 
 
-def extract(a, t, x_shape):
+def extract(
+    a: torch.Tensor, t: torch.Tensor, x_shape: torch.Size | tuple[int, ...]
+) -> torch.Tensor:
+    """
+    係数テンソル a からタイムステップ t に対応する値を取り出し、x_shape にブロードキャスト可能な形状に変形する。
+
+    拡散モデルにおいて、各サンプルのタイムステップに対応するスケジュール係数を取得するために使用する。
+
+    Parameters:
+    ----------
+    a : torch.Tensor
+        タイムステップごとの係数。形状 (num_timesteps,)。
+    t : torch.Tensor
+        各サンプルのタイムステップのインデックス。形状 (batch_size,)。
+    x_shape : torch.Size | tuple[int, ...]
+        ブロードキャスト先となる入力テンソルの形状。
+
+    Returns:
+    ----------
+    torch.Tensor
+        形状 (batch_size, 1, ..., 1) の係数テンソル (t と同じデバイス上)。
+    """
     batch_size = t.shape[0]
     out = a.gather(-1, t.cpu())
     return out.reshape(batch_size, *((1,) * (len(x_shape) - 1))).to(t.device)
@@ -26,21 +64,29 @@ def extract(a, t, x_shape):
 def weighted_average(
     x: torch.Tensor,
     weights: torch.Tensor | None = None,
-    dim: int = None,
+    dim: int | None = None,
     reduce: str = "mean",
-):
+) -> torch.Tensor:
     """
-    Computes the weighted average of a given tensor across a given dim, masking
-    values associated with weight zero,
-    meaning instead of `nan * 0 = nan` you will get `0 * 0 = 0`.
+    指定した次元に沿ってテンソルの重み付き平均を計算する。重みが 0 の要素はマスクされる。
 
-    Args:
-        x: Input tensor, of which the average must be computed.
-        weights: Weights tensor, of the same shape as `x`.
-        dim: The dim along which to average `x`
+    すなわち `nan * 0 = nan` とならず `0 * 0 = 0` となる。
+
+    Parameters:
+    ----------
+    x : torch.Tensor
+        平均を計算する入力テンソル。
+    weights : torch.Tensor | None, optional, default=None
+        重みテンソル (`x` と同じ形状)。None の場合は単純平均を計算する。
+    dim : int | None, optional, default=None
+        `x` の平均を取る次元。None (または 0) の場合は全要素で平均する (weights が None の場合は x をそのまま返す)。
+    reduce : str, optional, default="mean"
+        "mean" の場合は重み付き平均を返し、それ以外の場合は重み付けのみ行ったテンソルを返す。
 
     Returns:
-        Tensor: The tensor with values averaged along the specified `dim`.
+    ----------
+    torch.Tensor
+        指定した `dim` に沿って平均されたテンソル (reduce != "mean" の場合は重み付けされたテンソル)。
     """
     if weights is not None:
         weighted_tensor = torch.where(weights != 0, x * weights, torch.zeros_like(x))
@@ -56,12 +102,21 @@ def weighted_average(
         return x.mean(dim=dim) if dim else x
 
 
-def convert_to_list(s):
+def convert_to_list(s: str | list[int] | int | None) -> list[int] | None:
     """
-    Convert prediction length strings into list
-    e.g., '96-192-336-720' will be convert into [96,192,336,720]
-    Input: str, list, int
-    Returns: list
+    予測長の文字列などをリストに変換する。
+
+    例: '96-192-336-720' は [96, 192, 336, 720] に変換される。
+
+    Parameters:
+    ----------
+    s : str | list[int] | int | None
+        変換対象の値 (str, list, int)。
+
+    Returns:
+    ----------
+    list[int] | None
+        変換後のリスト。サポート外の型 (None など) の場合は None。
     """
     if type(s).__name__ == "int":
         return [s]
@@ -74,10 +129,21 @@ def convert_to_list(s):
         return None
 
 
-def find_best_epoch(ckpt_folder):
+def find_best_epoch(ckpt_folder: str) -> tuple[int, str]:
     """
-    Find the highest epoch in the Test Tube file structure.
-    Thanks to GitHub@Kai-Ref for identifying and fixing the issue with CRPS value comparisons.
+    チェックポイントフォルダ内から val_CRPS が最小のエポックを探す。
+
+    CRPS 値の比較に関する問題を特定・修正してくれた GitHub@Kai-Ref に感謝する。
+
+    Parameters:
+    ----------
+    ckpt_folder : str
+        "epoch={epoch}-val_CRPS={crps}" 形式のチェックポイントファイルを含むフォルダのパス。
+
+    Returns:
+    ----------
+    tuple[int | None, str | None]
+        (最良エポック番号, 最良チェックポイントのファイル名)。該当ファイルがない場合は (None, None)。
     """
     pattern = r"epoch=(\d+)-val_CRPS=([0-9]*\.[0-9]+)"
     ckpt_files = os.listdir(ckpt_folder)  # List of checkpoint files
@@ -96,13 +162,28 @@ def find_best_epoch(ckpt_folder):
                 best_crps = crps
                 best_ckpt = filename
                 best_epoch = epoch  # Store the best epoch number
+    assert best_epoch is not None and best_ckpt is not None
     return best_epoch, best_ckpt
 
 
-def ensure_list(input_value, default_value=None):
+def ensure_list(
+    input_value: str | list[int] | int | None,
+    default_value: str | list[int] | int | None = None,
+) -> list[int] | None:
     """
-    Ensures that the input is converted to a list. If the input is None,
-    it converts the default value to a list instead.
+    入力をリストに変換する。入力が None (変換不可) の場合は、代わりにデフォルト値をリストに変換する。
+
+    Parameters:
+    ----------
+    input_value : str | list[int] | int | None
+        変換対象の値。
+    default_value : str | list[int] | int | None, optional, default=None
+        input_value が変換できない場合に使用するデフォルト値。
+
+    Returns:
+    ----------
+    list[int] | None
+        変換後のリスト。どちらも変換できない場合は None。
     """
     result = convert_to_list(input_value)
     if result is None:
@@ -110,15 +191,19 @@ def ensure_list(input_value, default_value=None):
     return result
 
 
-def init_class_helper(class_name):
+def init_class_helper(class_name: str) -> type:
     """
-    Dynamically imports a module and retrieves a class.
+    モジュールを動的に import し、クラスを取得する。
 
-    Args:
-        class_name (str): The fully qualified name of the class in the format "module_name.ClassName".
+    Parameters:
+    ----------
+    class_name : str
+        "module_name.ClassName" 形式のクラスの完全修飾名。
 
     Returns:
-        type: The class object retrieved from the specified module.
+    ----------
+    type
+        指定したモジュールから取得したクラスオブジェクト。
     """
     module_name, class_name = class_name.rsplit(".", 1)
     module = importlib.import_module(module_name)

@@ -41,45 +41,94 @@ from probts.data.datasets.single_horizon_datasets import TransformedIterableData
 
 class MultiHorizonDataset:
     """
-    MultiHorizonDataset: Supports multi-horizon forecasting by enabling flexible context and prediction lengths.
+    コンテキスト長と予測長を柔軟に扱い、マルチホライズン予測をサポートするデータセットクラス。
 
-    Parameters:
+    Attributes:
     ----------
-    input_names : list
-        Names of input fields required by the model.
+    input_names_ : list[str]
+        モデルが必要とする入力フィールド名のリスト。
+    train_ctx_range : int | list[int]
+        学習データセットのコンテキスト長の範囲。
+    train_pred_range : int | list[int]
+        学習データセットの予測長の範囲。
+    val_ctx_range : int | list[int]
+        検証データセットのコンテキスト長の範囲。
+    val_pred_range : int | list[int]
+        検証データセットの予測長の範囲。
+    test_ctx_range : int | list[int]
+        テストデータセットのコンテキスト長の範囲。
+    test_pred_range : int | list[int]
+        テストデータセットの予測長の範囲。
+    continuous_sample : bool
+        train_pred_range から予測ホライズンを連続的にサンプリングするかどうか。
     freq : str
-        Frequency of the data (e.g., 'H' for hourly, 'D' for daily).
-    train_ctx_range : Union[int, list]
-        Range of context lengths for the training dataset.
-    train_pred_range : Union[int, list]
-        Range of prediction lengths for the training dataset.
-    val_ctx_range : Union[int, list]
-        Range of context lengths for the validation dataset.
-    val_pred_range : Union[int, list]
-        Range of prediction lengths for the validation dataset.
-    test_ctx_range : Union[int, list]
-        Range of context lengths for the testing dataset.
-    test_pred_range : Union[int, list]
-        Range of prediction lengths for the testing dataset.
-    multivariate : bool, optional, default=True
-        Whether the dataset contains multiple target variables.
-    continuous_sample : bool, optional, default=False
-        Whether to enable continuous sampling horizons from the train_pred_range.
+        データの頻度 (例: 'H' は毎時, 'D' は毎日)。
+    expected_ndim : int
+        ターゲット配列の期待次元数 (多変量なら 2, 単変量なら 1)。
+    time_feat_dim : int
+        時間特徴量の次元数 (create_transformation 呼び出し後に設定)。
+    train_sampler : InstanceSampler
+        学習用インスタンスサンプラー (get_sampler 呼び出し後に設定)。
+    val_sampler : InstanceSampler
+        検証用インスタンスサンプラー (get_sampler 呼び出し後に設定)。
+    test_sampler : InstanceSampler
+        テスト用インスタンスサンプラー (get_sampler 呼び出し後に設定)。
     """
+
+    input_names_: list[str]
+    train_ctx_range: int | list[int]
+    train_pred_range: int | list[int]
+    val_ctx_range: int | list[int]
+    val_pred_range: int | list[int]
+    test_ctx_range: int | list[int]
+    test_pred_range: int | list[int]
+    continuous_sample: bool
+    freq: str
+    expected_ndim: int
+    time_feat_dim: int
+    train_sampler: InstanceSampler
+    val_sampler: InstanceSampler
+    test_sampler: InstanceSampler
 
     def __init__(
         self,
-        input_names: list,
+        input_names: list[str],
         freq: str,
-        train_ctx_range: int | list,
-        train_pred_range: int | list,
-        val_ctx_range: int | list,
-        val_pred_range: int | list,
-        test_ctx_range: int | list,
-        test_pred_range: int | list,
+        train_ctx_range: int | list[int],
+        train_pred_range: int | list[int],
+        val_ctx_range: int | list[int],
+        val_pred_range: int | list[int],
+        test_ctx_range: int | list[int],
+        test_pred_range: int | list[int],
         multivariate: bool = True,
         continuous_sample: bool = False,
-    ):
+    ) -> None:
+        """
+        MultiHorizonDataset を初期化する。
+
+        Parameters:
+        ----------
+        input_names : list[str]
+            モデルが必要とする入力フィールド名のリスト。
+        freq : str
+            データの頻度 (例: 'H' は毎時, 'D' は毎日)。
+        train_ctx_range : int | list[int]
+            学習データセットのコンテキスト長の範囲。
+        train_pred_range : int | list[int]
+            学習データセットの予測長の範囲。
+        val_ctx_range : int | list[int]
+            検証データセットのコンテキスト長の範囲。
+        val_pred_range : int | list[int]
+            検証データセットの予測長の範囲。
+        test_ctx_range : int | list[int]
+            テストデータセットのコンテキスト長の範囲。
+        test_pred_range : int | list[int]
+            テストデータセットの予測長の範囲。
+        multivariate : bool, optional, default=True
+            データセットが複数のターゲット変数を含むかどうか。
+        continuous_sample : bool, optional, default=False
+            train_pred_range から予測ホライズンを連続的にサンプリングするかどうか。
+        """
         super().__init__()
         self.input_names_ = input_names
         self.train_ctx_range = train_ctx_range
@@ -96,10 +145,13 @@ class MultiHorizonDataset:
         else:
             self.expected_ndim = 1
 
-    def get_sampler(self):
+    def get_sampler(self) -> None:
         """
-        Creates samplers for training, validation, and testing datasets.
-        Samplers control how data instances are selected for each mode.
+        学習・検証・テスト用のインスタンスサンプラーを生成し、属性に設定する。
+        サンプラーは各モードでデータインスタンスをどのように選択するかを制御する。
+
+        - 学習: コンテキスト長・予測長の最小値を用いてランダムな時点を選択する。
+        - 検証・テスト: 最大値を用いて系列の最後の時点を選択する。
         """
 
         # for training
@@ -137,21 +189,27 @@ class MultiHorizonDataset:
             min_future=test_min_future,
         )
 
-    def create_transformation(self, data_stamp=None, pred_len=None) -> Transformation:
+    def create_transformation(
+        self,
+        data_stamp: np.ndarray | None = None,
+        pred_len: list[int] | None = None,
+    ) -> Transformation:
         """
-        Creates a transformation pipeline for data preprocessing.
+        データ前処理のための変換パイプラインを生成する。
+        時間特徴量や観測値インジケータなどの特徴量を付与する。
 
         Parameters:
         ----------
-        data_stamp : np.array, optional
-            Precomputed time features. If None, features are generated based on the frequency.
-        pred_len : int, optional
-            Prediction length for the transformation. If None, uses the maximum training prediction range.
+        data_stamp : np.ndarray | None, optional
+            事前計算済みの時間特徴量。None の場合はデータ頻度に基づいて特徴量を生成する。
+        pred_len : list[int] | None, optional
+            変換に用いる予測長のリスト (最大値が使用される)。
+            None の場合は学習用予測長範囲の最大値を用いる。
 
         Returns:
         ----------
-        Chain : Transformation
-            A chain of transformations applied to the dataset.
+        Transformation
+            データセットに適用する変換の連鎖 (Chain)。
         """
         if data_stamp is None:
             if self.freq in ["M", "W", "D", "B", "H", "min", "T"]:
@@ -204,21 +262,29 @@ class MultiHorizonDataset:
             ]
         )
 
-    def create_instance_splitter(self, mode: str, pred_len=None, auto_search=False):
+    def create_instance_splitter(
+        self,
+        mode: str,
+        pred_len: list[int] | None = None,
+        auto_search: bool = False,
+    ) -> Transformation:
         """
-        Creates an instance splitter for slicing data sequences.
+        時系列を切り出すためのインスタンススプリッターを生成する。
 
         Parameters:
         ----------
         mode : str
-            Dataset mode. Must be one of ['train', 'val', 'test'].
-        pred_len : list, optional
-            Prediction length for validation or testing. If None, defaults to the predefined ranges.
+            データセットのモード。['train', 'val', 'test'] のいずれか。
+        pred_len : list[int] | None, optional
+            検証・テスト時の予測長。None の場合は事前定義された範囲を用いる。
+        auto_search : bool, optional, default=False
+            テスト時に True の場合、過去長を
+            [max(test_ctx_range) + max(future_length)] とする。
 
         Returns:
         ----------
-        MultiHorizonSplitter : Transformation
-            Transformation that slices time series sequences.
+        Transformation
+            時系列を切り出す変換 (MultiHorizonSplitter + RenameFields)。
         """
         assert mode in ["train", "val", "test"]
 
@@ -276,28 +342,30 @@ class MultiHorizonDataset:
         self,
         dataset: Dataset,
         mode: str,
-        data_stamp=None,
-        pred_len=None,
-        auto_search=False,
+        data_stamp: np.ndarray | None = None,
+        pred_len: list[int] | None = None,
+        auto_search: bool = False,
     ) -> IterableDataset:
         """
-        Creates an iterable dataset with applied transformations and splitters.
+        変換とスプリッターを適用したイテラブルデータセットを生成する。
 
         Parameters:
         ----------
         dataset : Dataset
-            Input dataset to transform.
+            変換対象の入力データセット。
         mode : str
-            Mode of operation. Must be one of ['train', 'val', 'test'].
-        data_stamp : np.array, optional
-            Precomputed time features.
-        pred_len : list, optional
-            Prediction length for validation or testing.
+            動作モード。['train', 'val', 'test'] のいずれか。
+        data_stamp : np.ndarray | None, optional
+            事前計算済みの時間特徴量。
+        pred_len : list[int] | None, optional
+            検証・テスト時の予測長。
+        auto_search : bool, optional, default=False
+            検証・テスト時のスプリッターで auto_search を有効にするかどうか。
 
         Returns:
         ----------
-        IterableDataset : TransformedIterableDataset
-            Transformed dataset ready for model training or evaluation.
+        IterableDataset
+            学習・評価に利用可能な変換済みデータセット (TransformedIterableDataset)。
         """
         assert mode in ["train", "val", "test"]
 
@@ -324,46 +392,61 @@ class MultiHorizonDataset:
 
 class MultiHorizonSplitter(FlatMapTransformation):
     """
-    Split instances from a dataset, by slicing the target and other time series
-    fields at points in time selected by the specified sampler. The assumption
-    is that all time series fields start at the same time point.
+    指定したサンプラーで選択された時点でターゲットおよびその他の時系列フィールドを
+    切り出し、データセットからインスタンスを分割する変換クラス。
+    全ての時系列フィールドは同じ時点から開始することを前提とする。
 
-    It is assumed that time axis is always the last axis.
+    時間軸は常に最後の軸であることを前提とする。
 
-    The ``target_field`` and each field in ``time_series_fields`` are removed and
-    replaced by two new fields, with prefix `past_` and `future_` respectively.
+    ``target_field`` および ``time_series_fields`` の各フィールドは削除され、
+    それぞれ `past_` と `future_` を接頭辞に持つ 2 つの新しいフィールドに置き換えられる。
 
-    A ``past_is_pad`` is also added, that indicates whether values at a given
-    time point are padding or not.
+    また、各時点の値がパディングかどうかを示す ``past_is_pad`` も追加される。
 
-    Parameters
+    Attributes:
     ----------
-
-    target_field
-        field containing the target
-    is_pad_field
-        output field indicating whether padding happened
-    start_field
-        field containing the start date of the time series
-    forecast_start_field
-        output field that will contain the time point where the forecast starts
-    instance_sampler
-        instance sampler that provides sampling indices given a time series
-    past_length
-        length of the target seen before making prediction
-    future_length
-        length of the target that must be predicted
-    lead_time
-        gap between the past and future windows (default: 0)
-    output_NTC
-        whether to have time series output in (time, dimension) or in
-        (dimension, time) layout (default: True)
-    time_series_fields
-        fields that contains time series, they are split in the same interval
-        as the target (default: None)
-    dummy_value
-        Value to use for padding. (default: 0.0)
+    instance_sampler : InstanceSampler
+        時系列からサンプリング位置のインデックスを与えるインスタンスサンプラー。
+    past_length : int | list[int]
+        予測前に参照するターゲットの長さ (またはその候補リスト)。
+    future_length : int | list[int]
+        予測すべきターゲットの長さ (またはその候補リスト)。
+    continuous_sample : bool
+        学習時に past_length / future_length の範囲から連続的に長さをサンプリングするかどうか。
+    lead_time : int
+        過去ウィンドウと未来ウィンドウの間のギャップ。
+    output_NTC : bool
+        時系列出力を (time, dimension) レイアウトにするか (True)、
+        (dimension, time) レイアウトにするか (False)。
+    ts_fields : list[str]
+        ターゲットと同じ区間で分割される時系列フィールド名のリスト。
+    target_field : str
+        ターゲットを含むフィールド名。
+    is_pad_field : str
+        パディングの有無を示す出力フィールド名。
+    start_field : str
+        時系列の開始日時を含むフィールド名。
+    forecast_start_field : str
+        予測開始時点を格納する出力フィールド名。
+    dummy_value : float
+        パディングに用いる値。
+    mode : str
+        動作モード。['train', 'val', 'test'] のいずれか。
     """
+
+    instance_sampler: InstanceSampler
+    past_length: int | list[int]
+    future_length: int | list[int]
+    continuous_sample: bool
+    lead_time: int
+    output_NTC: bool
+    ts_fields: list[str]
+    target_field: str
+    is_pad_field: str
+    start_field: str
+    forecast_start_field: str
+    dummy_value: float
+    mode: str
 
     # @validated()
     def __init__(
@@ -373,8 +456,8 @@ class MultiHorizonSplitter(FlatMapTransformation):
         start_field: str,
         forecast_start_field: str,
         instance_sampler: InstanceSampler,
-        past_length: int | list,
-        future_length: int | list,
+        past_length: int | list[int],
+        future_length: int | list[int],
         mode: str,
         lead_time: int = 0,
         output_NTC: bool = True,
@@ -382,6 +465,39 @@ class MultiHorizonSplitter(FlatMapTransformation):
         dummy_value: float = 0.0,
         continuous_sample: bool = False,
     ) -> None:
+        """
+        MultiHorizonSplitter を初期化する。
+
+        Parameters:
+        ----------
+        target_field : str
+            ターゲットを含むフィールド名。
+        is_pad_field : str
+            パディングの有無を示す出力フィールド名。
+        start_field : str
+            時系列の開始日時を含むフィールド名。
+        forecast_start_field : str
+            予測開始時点を格納する出力フィールド名。
+        instance_sampler : InstanceSampler
+            時系列からサンプリング位置のインデックスを与えるインスタンスサンプラー。
+        past_length : int | list[int]
+            予測前に参照するターゲットの長さ (またはその候補リスト)。
+        future_length : int | list[int]
+            予測すべきターゲットの長さ (またはその候補リスト)。
+        mode : str
+            動作モード。['train', 'val', 'test'] のいずれか。
+        lead_time : int, optional, default=0
+            過去ウィンドウと未来ウィンドウの間のギャップ。
+        output_NTC : bool, optional, default=True
+            時系列出力を (time, dimension) レイアウトにするか (True)、
+            (dimension, time) レイアウトにするか (False)。
+        time_series_fields : list[str], optional, default=[]
+            ターゲットと同じ区間で分割される時系列フィールド名のリスト。
+        dummy_value : float, optional, default=0.0
+            パディングに用いる値。
+        continuous_sample : bool, optional, default=False
+            学習時に長さの範囲から連続的にサンプリングするかどうか。
+        """
         super().__init__()
 
         # assert future_length > 0, "The value of `future_length` should be > 0"
@@ -401,15 +517,61 @@ class MultiHorizonSplitter(FlatMapTransformation):
         self.dummy_value = dummy_value
         self.mode = mode
 
-    def _past(self, col_name):
+    def _past(self, col_name: str) -> str:
+        """
+        過去部分のフィールド名を生成する。
+
+        Parameters:
+        ----------
+        col_name : str
+            元のフィールド名。
+
+        Returns:
+        ----------
+        str
+            `past_` を接頭辞に付与したフィールド名。
+        """
         return f"past_{col_name}"
 
-    def _future(self, col_name):
+    def _future(self, col_name: str) -> str:
+        """
+        未来部分のフィールド名を生成する。
+
+        Parameters:
+        ----------
+        col_name : str
+            元のフィールド名。
+
+        Returns:
+        ----------
+        str
+            `future_` を接頭辞に付与したフィールド名。
+        """
         return f"future_{col_name}"
 
     def _split_array(
         self, array: np.ndarray, idx: int, past_length: int, future_length: int
     ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        配列を指定位置で過去部分と未来部分に分割する。
+        過去部分が不足する場合は dummy_value で左側をパディングする。
+
+        Parameters:
+        ----------
+        array : np.ndarray
+            分割対象の配列 (時間軸は最後の軸)。
+        idx : int
+            分割位置 (予測開始位置) のインデックス。
+        past_length : int
+            切り出す過去部分の長さ。
+        future_length : int
+            切り出す未来部分の長さ。
+
+        Returns:
+        ----------
+        tuple[np.ndarray, np.ndarray]
+            (過去部分, 未来部分) の配列のタプル。
+        """
         if idx >= past_length:
             past_piece = array[..., idx - past_length : idx]
         else:
@@ -426,7 +588,26 @@ class MultiHorizonSplitter(FlatMapTransformation):
 
         return past_piece, future_piece
 
-    def _split_instance(self, entry: DataEntry, idx: int, is_train) -> DataEntry:
+    def _split_instance(self, entry: DataEntry, idx: int, is_train: bool) -> DataEntry:
+        """
+        1 つのデータエントリを指定位置で過去・未来に分割したインスタンスを生成する。
+
+        Parameters:
+        ----------
+        entry : DataEntry
+            分割対象のデータエントリ。
+        idx : int
+            分割位置 (予測開始位置) のインデックス。
+        is_train : bool
+            学習時かどうか。True の場合は過去長・予測長をランダムにサンプリングし、
+            False の場合は最大値を用いる。
+
+        Returns:
+        ----------
+        DataEntry
+            past_/future_ フィールド、パディング指標、予測開始時点、
+            context_length および prediction_length を付与した新しいエントリ。
+        """
         slice_cols = self.ts_fields + [self.target_field]
         dtype = entry[self.target_field].dtype
         entry = entry.copy()
@@ -473,6 +654,21 @@ class MultiHorizonSplitter(FlatMapTransformation):
     def flatmap_transform(
         self, entry: DataEntry, is_train: bool
     ) -> Iterator[DataEntry]:
+        """
+        インスタンスサンプラーで選択された各位置についてエントリを分割し、順に返す。
+
+        Parameters:
+        ----------
+        entry : DataEntry
+            分割対象のデータエントリ。
+        is_train : bool
+            学習時かどうか。
+
+        Returns:
+        ----------
+        Iterator[DataEntry]
+            分割済みインスタンスを返すイテレータ。
+        """
         sampled_indices = self.instance_sampler(entry[self.target_field])
 
         for idx in sampled_indices:

@@ -1,12 +1,16 @@
 from functools import cached_property
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import torch
+from gluonts.dataset.common import Dataset, TrainDatasets
 from gluonts.dataset.multivariate_grouper import MultivariateGrouper
 from gluonts.dataset.repository import dataset_names, datasets
 
 from probts.data.data_utils.data_scaler import (
     IdentityScaler,
+    Scaler,
     StandardScaler,
     TemporalScaler,
 )
@@ -25,7 +29,10 @@ from probts.data.data_utils.time_features import get_lags
 from probts.data.data_wrapper import ProbTSBatchData
 from probts.data.datasets.gift_eval_datasets import GiftEvalDataset
 from probts.data.datasets.multi_horizon_datasets import MultiHorizonDataset
-from probts.data.datasets.single_horizon_datasets import SingleHorizonDataset
+from probts.data.datasets.single_horizon_datasets import (
+    SingleHorizonDataset,
+    TransformedIterableDataset,
+)
 from probts.utils.utils import ensure_list
 
 MULTI_VARIATE_DATASETS = [
@@ -40,96 +47,229 @@ MULTI_VARIATE_DATASETS = [
 
 
 class DataManager:
+    """
+    データセットの読み込みと、時系列モデル向けのデータ準備を行うクラス。
+
+    Attributes:
+    ----------
+    dataset : str
+        データセット名 (GIFT eval の場合は読み込み時に 'gift/' と term 部分を除いた名前に更新される)。
+    path : str
+        データセットを格納するルートディレクトリのパス。
+    history_length : int | None
+        モデルへの過去入力ウィンドウの長さ (メタパラメータ設定後に確定する)。
+    context_length : int | list[int] | None
+        モデルへの入力コンテキスト長 (マルチホライズン時はリスト)。
+    prediction_length : int | list[int] | str | None
+        予測ホライズンの長さ (マルチホライズン時はリスト)。
+    train_ctx_len : int | None
+        学習用データセットのコンテキスト長。
+    val_ctx_len : int | None
+        検証用データセットのコンテキスト長。
+    train_pred_len_list : list[int] | int | str | None
+        学習用データセットの予測長 (長期データセットではリストに変換される)。
+    val_pred_len_list : list[int] | int | str | None
+        検証用データセットの予測長 (長期データセットではリストに変換される)。
+    test_rolling_length : int | str
+        テスト時のローリング予測のギャップウィンドウサイズ ('auto' の場合は頻度に基づき決定される)。
+    split_val : bool
+        学習データセットを学習用と検証用に分割するかどうか。
+    scaler_type : str
+        スケーラーの種類 ('none', 'standard', 'temporal')。
+    context_length_factor : int
+        コンテキスト長のスケーリング係数。
+    timeenc : int
+        時間エンコーディングの方式。
+    var_specific_norm : bool
+        変数ごとに独立して正規化するかどうか。
+    data_path : str | None
+        データセットファイルへの個別パス。
+    freq : str | None
+        データの頻度 (例: 'H' は毎時, 'D' は毎日)。
+    multivariate : bool
+        データセットが多変量かどうか。
+    continuous_sample : bool
+        学習時に予測ホライズンを連続的にサンプリングするかどうか。
+    train_ratio : float
+        学習に用いるデータの割合。
+    test_ratio : float
+        テストに用いるデータの割合。
+    auto_search : bool
+        past_len=ctx_len+pred_len とし、学習後の探索を可能にするかどうか。
+    test_rolling_dict : dict[str, int]
+        頻度 (小文字) から既定のローリング長への対応表。
+    global_mean : torch.Tensor | None
+        学習データのターゲットの変数ごとの平均。
+    scaler : Scaler
+        データの正規化に用いるスケーラー。
+    multi_hor : bool
+        マルチホライズン (複数の予測長) で扱うかどうか。
+    dataset_raw : pd.DataFrame | TrainDatasets | GiftEvalDataset
+        読み込んだ生データセット。
+    train_iter_dataset : TransformedIterableDataset
+        学習用イテラブルデータセット。
+    val_iter_dataset : TransformedIterableDataset | dict[str, TransformedIterableDataset] | None
+        検証用イテラブルデータセット (マルチホライズン時は予測長をキーとする辞書、検証セットが無い場合は None)。
+    test_iter_dataset : TransformedIterableDataset | dict[str, TransformedIterableDataset]
+        テスト用イテラブルデータセット (マルチホライズン時は予測長をキーとする辞書)。
+    time_feat_dim : int
+        時間特徴量の次元数。
+    target_dim : int
+        ターゲット変数の次元数。
+    lags_list : list[int]
+        頻度に基づくラグのリスト。
+    train_ctx_len_list : list[int]
+        学習用コンテキスト長のリスト (長期データセットのみ)。
+    val_ctx_len_list : list[int]
+        検証用コンテキスト長のリスト (長期データセットのみ)。
+    test_ctx_len_list : list[int]
+        テスト用コンテキスト長のリスト (長期データセットのみ)。
+    test_pred_len_list : list[int]
+        テスト用予測長のリスト (長期データセットのみ)。
+    data_stamp : np.ndarray
+        事前計算済みの時間特徴量 (長期データセットのみ)。
+    border_begin : list[int]
+        学習・検証・テスト区間の開始インデックス (長期データセットのみ)。
+    border_end : list[int]
+        学習・検証・テスト区間の終了インデックス (長期データセットのみ)。
+    num_test_dates : int
+        テスト日数 (ローリング評価のウィンドウ数, 短期データセットのみ)。
+    """
+
+    dataset: str
+    path: str
+    history_length: int | None
+    context_length: int | list[int] | None
+    prediction_length: int | list[int] | str | None
+    train_ctx_len: int | None
+    val_ctx_len: int | None
+    train_pred_len_list: list[int] | int | str | None
+    val_pred_len_list: list[int] | int | str | None
+    test_rolling_length: int | str
+    split_val: bool
+    scaler_type: str
+    context_length_factor: int
+    timeenc: int
+    var_specific_norm: bool
+    data_path: str | None
+    freq: str | None
+    multivariate: bool
+    continuous_sample: bool
+    train_ratio: float
+    test_ratio: float
+    auto_search: bool
+    test_rolling_dict: dict[str, int]
+    global_mean: torch.Tensor | None
+    scaler: Scaler
+    multi_hor: bool
+    dataset_raw: pd.DataFrame | TrainDatasets | GiftEvalDataset
+    train_iter_dataset: TransformedIterableDataset
+    val_iter_dataset: (
+        TransformedIterableDataset | dict[str, TransformedIterableDataset] | None
+    )
+    test_iter_dataset: TransformedIterableDataset | dict[str, TransformedIterableDataset]
+    time_feat_dim: int
+    target_dim: int
+    lags_list: list[int]
+    train_ctx_len_list: list[int]
+    val_ctx_len_list: list[int]
+    test_ctx_len_list: list[int]
+    test_pred_len_list: list[int]
+    data_stamp: np.ndarray
+    border_begin: list[int]
+    border_end: list[int]
+    num_test_dates: int
+
     def __init__(
         self,
         dataset: str,
         path: str = "./datasets",
-        history_length: int = None,
-        context_length: int = None,
-        prediction_length: list | int | str = None,
-        train_ctx_len: int = None,
-        train_pred_len_list: list | int | str = None,
-        val_ctx_len: int = None,
-        val_pred_len_list: list | int | str = None,
-        test_rolling_length: int = 96,
+        history_length: int | None = None,
+        context_length: int | None = None,
+        prediction_length: list[int] | int | str | None = None,
+        train_ctx_len: int | None = None,
+        train_pred_len_list: list[int] | int | str | None = None,
+        val_ctx_len: int | None = None,
+        val_pred_len_list: list[int] | int | str | None = None,
+        test_rolling_length: int | str = 96,
         split_val: bool = True,
         scaler: str = "none",
         context_length_factor: int = 1,
         timeenc: int = 1,
         var_specific_norm: bool = True,
-        data_path: str = None,
-        freq: str = None,
+        data_path: str | None = None,
+        freq: str | None = None,
         multivariate: bool = True,
         continuous_sample: bool = False,
         train_ratio: float = 0.7,
         test_ratio: float = 0.2,
         auto_search: bool = False,
-    ):
+    ) -> None:
         """
-        DataManager class for handling datasets and preparing data for time-series models.
+        DataManager を初期化し、データセットを読み込んで学習・検証・テスト用データセットを準備する。
 
-        Parameters
+        Parameters:
         ----------
         dataset : str
-            Name of the dataset to load. Examples include "etth1", "electricity_ltsf", etc.
+            読み込むデータセット名。例: "etth1", "electricity_ltsf" など。
         path : str, optional, default='./datasets'
-            Root directory path where datasets are stored.
-        history_length : int, optional, default=None
-            Length of the historical input window for the model.
-            If not specified, it is automatically calculated based on `context_length` and lag features.
-        context_length : int, optional, default=None
-            Length of the input context for the model.
-        prediction_length : Union[list, int, str], optional, default=None
-            Length of the prediction horizon for the model. Can be:
-            - int: Fixed prediction length.
-            - list: Variable prediction lengths for multi-horizon training.
-            - str: The string format of multiple prediction length. E.g., '96-192-336-720' represents [96, 192, 336, 720]
-        train_ctx_len : int, optional, default=None
-            Context length for the training dataset.
-            If not specified, defaults to the value of `context_length`.
-        train_pred_len_list : Union[list, int, str], optional, default=None
-            List of prediction lengths for the training dataset.
-            If not specified, defaults to the value of `prediction_length`.
-        val_ctx_len : int, optional, default=None
-            Context length for the validation dataset.
-            If not specified, defaults to the value of `context_length`.
-        val_pred_len_list : Union[list, int, str], optional, default=None
-            List of prediction lengths for the validation dataset.
-            If not specified, defaults to the value of `prediction_length`.
-        test_rolling_length : int, optional, default=96
-            Gap window size used for rolling predictions in the testing phase.
-            - If set to `auto`, it is dynamically determined based on the dataset frequency
-            (e.g., 'H' -> 24, 'D' -> 7, 'W' -> 4).
+            データセットを格納するルートディレクトリのパス。
+        history_length : int | None, optional, default=None
+            モデルへの過去入力ウィンドウの長さ。
+            指定しない場合は `context_length` とラグ特徴量から自動計算される。
+        context_length : int | None, optional, default=None
+            モデルへの入力コンテキスト長。
+        prediction_length : list[int] | int | str | None, optional, default=None
+            モデルの予測ホライズンの長さ。以下のいずれか:
+            - int: 固定の予測長。
+            - list: マルチホライズン学習用の可変予測長。
+            - str: 複数予測長の文字列表現。例: '96-192-336-720' は [96, 192, 336, 720] を表す。
+        train_ctx_len : int | None, optional, default=None
+            学習用データセットのコンテキスト長。
+            指定しない場合は `context_length` の値が使われる。
+        train_pred_len_list : list[int] | int | str | None, optional, default=None
+            学習用データセットの予測長のリスト。
+            指定しない場合は `prediction_length` の値が使われる。
+        val_ctx_len : int | None, optional, default=None
+            検証用データセットのコンテキスト長。
+            指定しない場合は `context_length` の値が使われる。
+        val_pred_len_list : list[int] | int | str | None, optional, default=None
+            検証用データセットの予測長のリスト。
+            指定しない場合は `prediction_length` の値が使われる。
+        test_rolling_length : int | str, optional, default=96
+            テスト時のローリング予測に用いるギャップウィンドウサイズ。
+            - `auto` を指定した場合はデータ頻度に基づいて動的に決定される
+            (例: 'H' -> 24, 'D' -> 7, 'W' -> 4)。
         split_val : bool, optional, default=True
-            Whether to split the training dataset into training and validation sets.
+            学習データセットを学習用と検証用に分割するかどうか。
         scaler : str, optional, default='none'
-            Type of normalization or scaling applied to the dataset. Options include:
-            - 'none': No scaling.
-            - 'standard': Standard normalization (z-score).
-            - 'temporal': Mean-scaling normalization.
+            データセットに適用する正規化・スケーリングの種類。以下のいずれか:
+            - 'none': スケーリングなし。
+            - 'standard': 標準化 (z-score)。
+            - 'temporal': 平均スケーリングによる正規化。
         context_length_factor : int, optional, default=1
-            Scaling factor for context length, allowing dynamic adjustment of `context_length`.
+            コンテキスト長のスケーリング係数。`context_length` を動的に調整できる。
         timeenc : int, optional, default=1
-            Time encoding strategy. Options include:
-            - 0: The dimension of time feature is 5, containing `month, day, weekday, hour, minute`
-            - 1: Cyclic time features (e.g., sine/cosine of timestamps).
-            - 2: Raw Timestamp information.
+            時間エンコーディングの方式。以下のいずれか:
+            - 0: 時間特徴量の次元は 5 で、`month, day, weekday, hour, minute` を含む。
+            - 1: 周期的な時間特徴量 (例: タイムスタンプの sine/cosine)。
+            - 2: 生のタイムスタンプ情報。
         var_specific_norm : bool, optional, default=True
-            Whether to normalize variables independently. Only applies when `scaler='standard'`.
-        data_path : str, optional, default=None
-            Specific path to the dataset file.
-        freq : str, optional, default=None
-            Data frequency (e.g., 'H' for hourly, 'D' for daily).
+            変数ごとに独立して正規化するかどうか。`scaler='standard'` の場合のみ有効。
+        data_path : str | None, optional, default=None
+            データセットファイルへの個別パス。
+        freq : str | None, optional, default=None
+            データの頻度 (例: 'H' は毎時, 'D' は毎日)。
         multivariate : bool, optional, default=True
-            Whether the dataset is multivariables.
+            データセットが多変量かどうか。
         continuous_sample : bool, optional, default=False
-            Whether to enable continuous sampling for forecasting horizons during training phase.
+            学習時に予測ホライズンを連続的にサンプリングするかどうか。
         train_ratio : float, optional, default=0.7
-            Proportion of the dataset used for training. Default is 70% of the data.
+            学習に用いるデータの割合。既定はデータの 70%。
         test_ratio : float, optional, default=0.2
-            Proportion of the dataset used for testing. Default is 20% of the data.
+            テストに用いるデータの割合。既定はデータの 20%。
         auto_search : bool, optional, default=False
-            Make past_len=ctx_len+pred_len, enabling post training search.
+            past_len=ctx_len+pred_len とし、学習後の探索を可能にする。
         """
 
         self.dataset = dataset
@@ -184,15 +324,32 @@ class DataManager:
             # Print configuration details
             self._print_configurations()
 
-    def _configure_scaler(self, scaler_type: str):
-        """Configure the scaler."""
+    def _configure_scaler(self, scaler_type: str) -> Scaler:
+        """
+        スケーラーを設定する。
+
+        Parameters:
+        ----------
+        scaler_type : str
+            スケーラーの種類 ('standard', 'temporal', それ以外は恒等変換)。
+
+        Returns:
+        ----------
+        Scaler
+            生成したスケーラー。
+        """
         if scaler_type == "standard":
             return StandardScaler(var_specific=self.var_specific_norm)
         elif scaler_type == "temporal":
             return TemporalScaler()
         return IdentityScaler()
 
-    def _load_gift_eval_dataset(self):
+    def _load_gift_eval_dataset(self) -> None:
+        """
+        Salesforce の GIFT eval データセットを読み込み、学習・検証・テスト用データセットを準備する。
+
+        データセット名は 'gift/<name>/<term>' 形式を想定する。
+        """
         parts = self.dataset[5:].split("/")  # Remove first 'gift/'
         self.dataset = "/".join(parts[:-1])  # Join all parts except last one with '/'
         gift_term = parts[-1]  # corresponding to "term" parameter in GiftEvalDataset
@@ -228,8 +385,10 @@ class DataManager:
         # TODO: Implement global mean for GIFT eval datasets
         # self.global_mean = torch.mean(torch.tensor(self.dataset_raw.training_dataset[0]['target']), dim=-1)
 
-    def _load_short_term_dataset(self):
-        """Load short-term dataset using GluonTS."""
+    def _load_short_term_dataset(self) -> None:
+        """
+        GluonTS を用いて短期予測用データセットを読み込む。
+        """
         print(f"Loading Short-term Dataset: {self.dataset}")
         self.dataset_raw = datasets.get_dataset(
             self.dataset, path=Path(self.path), regenerate=True
@@ -244,8 +403,21 @@ class DataManager:
         )
         self.prepare_STSF_dataset(self.dataset)
 
-    def _set_meta_parameters(self, target_dim, freq, prediction_length):
-        """Set meta parameters from base dataset."""
+    def _set_meta_parameters(
+        self, target_dim: int | str, freq: str, prediction_length: int
+    ) -> None:
+        """
+        ベースデータセットのメタ情報からメタパラメータを設定する。
+
+        Parameters:
+        ----------
+        target_dim : int | str
+            ターゲット変数の次元数 (int に変換される)。
+        freq : str
+            データの頻度。
+        prediction_length : int
+            予測ホライズンの長さ。
+        """
         self.target_dim = int(target_dim)
         self.multivariate = self.target_dim > 1
         self.freq = freq
@@ -258,8 +430,12 @@ class DataManager:
             self.context_length + max(self.lags_list)
         )
 
-    def _process_context_and_prediction_lengths(self):
-        """Convert context and prediction lengths to lists for multi-horizon processing."""
+    def _process_context_and_prediction_lengths(self) -> None:
+        """
+        マルチホライズン処理のため、コンテキスト長と予測長をリストに変換する。
+
+        各フェーズのコンテキスト長が単一であることを検証し、multi_hor を設定する。
+        """
         self.train_ctx_len_list = ensure_list(
             self.train_ctx_len, default_value=self.context_length
         )
@@ -292,8 +468,15 @@ class DataManager:
             or len(self.test_pred_len_list) > 1
         )
 
-    def _load_long_term_dataset(self):
-        """Load long-term dataset or customized dataset."""
+    def _load_long_term_dataset(self) -> None:
+        """
+        長期予測用データセットまたはカスタムデータセットを読み込む。
+
+        Raises:
+        ----------
+        ValueError
+            context_length または prediction_length が指定されていない場合。
+        """
         print(f"Loading Long-term Dataset: {self.dataset}")
         if not self.context_length or not self.prediction_length:
             raise ValueError("context_length or prediction_length must be specified.")
@@ -317,8 +500,20 @@ class DataManager:
         self._set_meta_parameters_from_raw(data_size)
         self.prepare_dataset()
 
-    def _set_meta_parameters_from_raw(self, data_size):
-        """Set meta parameters directly from raw dataset."""
+    def _set_meta_parameters_from_raw(self, data_size: int) -> None:
+        """
+        生データセットから直接メタパラメータを設定する。
+
+        Parameters:
+        ----------
+        data_size : int
+            データセットのタイムスタンプの総数。
+
+        Raises:
+        ----------
+        NotImplementedError
+            カスタム単変量データセットが指定された場合。
+        """
         self.lags_list = get_lags(self.freq)
         self.prediction_length = (
             ensure_list(self.prediction_length)
@@ -347,8 +542,10 @@ class DataManager:
             else:
                 self.test_rolling_length = 24
 
-    def prepare_dataset(self):
-        """Prepare datasets for training, validation, and testing."""
+    def prepare_dataset(self) -> None:
+        """
+        学習・検証・テスト用データセットを準備する。
+        """
         # Split raw data into train, validation, and test sets
         train_data = self.dataset_raw[: self.border_end[0]]
         val_data = self.dataset_raw[: self.border_end[1]]
@@ -391,8 +588,24 @@ class DataManager:
             torch.tensor(group_train_set[0]["target"]), dim=-1
         )
 
-    def _prepare_multi_horizon_datasets(self, group_val_set, group_test_set):
-        """Prepare multi-horizon datasets for validation and testing."""
+    def _prepare_multi_horizon_datasets(
+        self, group_val_set: Dataset, group_test_set: Dataset
+    ) -> MultiHorizonDataset:
+        """
+        検証・テスト用のマルチホライズンデータセットを準備する。
+
+        Parameters:
+        ----------
+        group_val_set : Dataset
+            多変量にグループ化された検証用データセット。
+        group_test_set : Dataset
+            多変量にグループ化されたテスト用データセット。
+
+        Returns:
+        ----------
+        MultiHorizonDataset
+            学習用データセットの生成にも用いるデータセットローダ。
+        """
         self.val_iter_dataset = {}
         self.test_iter_dataset = {}
         dataset_loader = MultiHorizonDataset(
@@ -447,8 +660,24 @@ class DataManager:
 
         return dataset_loader
 
-    def _prepare_single_horizon_datasets(self, group_val_set, group_test_set):
-        """Prepare single-horizon datasets for training, validation, and testing."""
+    def _prepare_single_horizon_datasets(
+        self, group_val_set: Dataset, group_test_set: Dataset
+    ) -> SingleHorizonDataset:
+        """
+        検証・テスト用の単一ホライズンデータセットを準備する。
+
+        Parameters:
+        ----------
+        group_val_set : Dataset
+            多変量にグループ化された検証用データセット。
+        group_test_set : Dataset
+            多変量にグループ化されたテスト用データセット。
+
+        Returns:
+        ----------
+        SingleHorizonDataset
+            学習用データセットの生成にも用いるデータセットローダ。
+        """
         dataset_loader = SingleHorizonDataset(
             ProbTSBatchData.input_names_,
             self.history_length,
@@ -493,8 +722,15 @@ class DataManager:
 
         return dataset_loader
 
-    def prepare_STSF_dataset(self, dataset: str):
-        """Prepare datasets for short-term series forecasting."""
+    def prepare_STSF_dataset(self, dataset: str) -> None:
+        """
+        短期時系列予測 (STSF) 用のデータセットを準備する。
+
+        Parameters:
+        ----------
+        dataset : str
+            データセット名。
+        """
         if dataset in MULTI_VARIATE_DATASETS:
             self.num_test_dates = int(
                 len(self.dataset_raw.test) / len(self.dataset_raw.train)
@@ -554,8 +790,10 @@ class DataManager:
         self.test_iter_dataset = dataset_loader.get_iter_dataset(test_set, mode="test")
         self.time_feat_dim = dataset_loader.time_feat_dim
 
-    def _print_configurations(self):
-        """Print dataset and configuration details."""
+    def _print_configurations(self) -> None:
+        """
+        データセットと設定の詳細を表示する。
+        """
         print(
             f"Test context length: {self.test_ctx_len_list}, prediction length: {self.test_pred_len_list}"
         )
@@ -571,10 +809,26 @@ class DataManager:
 
     @cached_property
     def is_gift_eval(self) -> bool:
+        """
+        データセットが GIFT eval データセット ('gift/' で始まる名前) かどうかを返す。
+
+        Returns:
+        ----------
+        bool
+            GIFT eval データセットであれば True。
+        """
         return self.dataset[:5] == "gift/"
 
     @cached_property
     def is_univar_dataset(self) -> bool:
+        """
+        データセットが単変量データセット (名前に 'm4' または 'm5' を含む) かどうかを返す。
+
+        Returns:
+        ----------
+        bool
+            単変量データセットであれば True。
+        """
         if "m4" in self.dataset or "m5" in self.dataset:
             return True
         return False

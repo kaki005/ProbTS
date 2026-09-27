@@ -2,8 +2,8 @@ import logging
 import os
 
 import torch
-from lightning.pytorch.callbacks import ModelCheckpoint
-from lightning.pytorch.cli import LightningCLI
+from lightning.pytorch.callbacks import Callback, ModelCheckpoint
+from lightning.pytorch.cli import LightningArgumentParser, LightningCLI
 from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 
 from probts.callbacks import MemoryCallback, TimeCallback
@@ -25,7 +25,47 @@ logging.basicConfig(level=logging.INFO)
 
 
 class ProbTSCli(LightningCLI):
-    def add_arguments_to_parser(self, parser):
+    """
+    ProbTS 用の LightningCLI。実験の初期化、コールバック設定、学習・テスト・結果保存を行う。
+
+    Attributes:
+    ----------
+    model : ProbTSForecastModule
+        学習・評価対象のモデル (チェックポイントから再読み込みされる場合がある)。
+    tag : str
+        データセット名・モデル名・コンテキスト長・予測長・シードなどから構成される実験タグ。
+    save_dict : str
+        実験結果を保存するディレクトリのパス。
+    memory_callback : MemoryCallback
+        メモリ使用量を記録するコールバック。
+    time_callback : TimeCallback
+        実行時間を記録するコールバック。
+    checkpoint_callback : ModelCheckpoint
+        チェックポイントを保存するコールバック (学習を行う場合のみ設定)。
+    model_summary_callback : Callback
+        trainer に登録された ModelSummary コールバック。
+    ckpt : str
+        テスト時に読み込む最良チェックポイントのパス (学習を行う場合のみ設定)。
+    """
+
+    model: ProbTSForecastModule
+    tag: str
+    save_dict: str
+    memory_callback: MemoryCallback
+    time_callback: TimeCallback
+    checkpoint_callback: ModelCheckpoint
+    model_summary_callback: Callback
+    ckpt: str
+
+    def add_arguments_to_parser(self, parser: LightningArgumentParser) -> None:
+        """
+        データモジュールの属性をモデル・forecaster の引数にリンクする。
+
+        Parameters:
+        ----------
+        parser : LightningArgumentParser
+            引数を追加・リンクするパーサ。
+        """
         data_to_model_link_args = [
             "scaler",
             "train_pred_len_list",
@@ -53,7 +93,13 @@ class ProbTSCli(LightningCLI):
                 apply_on="instantiate",
             )
 
-    def init_exp(self):
+    def init_exp(self) -> None:
+        """
+        実験を初期化する。
+
+        実験タグと保存ディレクトリの作成、必要に応じた事前学習済みチェックポイントの読み込み、
+        およびコールバック (メモリ・時間・チェックポイント) の設定を行う。
+        """
         config_args = self.parser.parse_args()
 
         if self.datamodule.data_manager.multi_hor:
@@ -161,10 +207,17 @@ class ProbTSCli(LightningCLI):
                 enable_version_counter=False,
             )
             callbacks.append(self.checkpoint_callback)
-
         self.set_callbacks(callbacks)
 
-    def set_callbacks(self, callbacks):
+    def set_callbacks(self, callbacks: list[Callback]) -> None:
+        """
+        trainer の組み込みコールバックを同名のカスタムコールバックで置き換え、ModelSummary コールバックを保持する。
+
+        Parameters:
+        ----------
+        callbacks : list[Callback]
+            登録するカスタムコールバックのリスト。
+        """
         # Replace built-in callbacks with custom callbacks
         custom_callbacks_name = [c.__class__.__name__ for c in callbacks]
         for c in self.trainer.callbacks:
@@ -176,12 +229,18 @@ class ProbTSCli(LightningCLI):
             if c.__class__.__name__ == "ModelSummary":
                 self.model_summary_callback = c
 
-    def set_fit_mode(self):
+    def set_fit_mode(self) -> None:
+        """
+        学習モード用に TensorBoardLogger を設定する。
+        """
         self.trainer.logger = TensorBoardLogger(
             save_dir=f"{self.save_dict}/logs", name=self.tag, version="fit"
         )
 
-    def set_test_mode(self):
+    def set_test_mode(self) -> None:
+        """
+        テストモード用に CSVLogger を設定し、学習を行った場合は最良チェックポイントを読み込む。
+        """
         self.trainer.logger = CSVLogger(
             save_dir=f"{self.save_dict}/logs", name=self.tag, version="test"
         )
@@ -201,12 +260,19 @@ class ProbTSCli(LightningCLI):
                 sampling_weight_scheme=self.model.sampling_weight_scheme,
             )
 
-    def run(self):
-        self.init_exp()
+    def run(self) -> None:
+        """
+        実験を実行する。
+
+        学習 (no_training でない場合) とテストを行い、実験サマリと結果 CSV を保存する。
+        """
+        self.init_exp()  # 初期化
 
         if not self.model.forecaster.no_training:
-            self.set_fit_mode()
-            if self.datamodule.dataset_val is None:  # if the validation set is empty
+            self.set_fit_mode()  # 学習用のTensorBoardLoggerを設定
+            if (
+                self.datamodule.dataset_val is None
+            ):  # ヴァリデーションセットが空の場合は
                 self.trainer.fit(
                     model=self.model,
                     train_dataloaders=self.datamodule.train_dataloader(),
@@ -217,8 +283,8 @@ class ProbTSCli(LightningCLI):
         else:
             inference = True
 
-        self.set_test_mode()
-        self.trainer.test(model=self.model, datamodule=self.datamodule)
+        self.set_test_mode()  # テストモード用に CSVLogger を設定し、学習を行った場合は最良チェックポイントを読み込む。
+        self.trainer.test(model=self.model, datamodule=self.datamodule)  # テスト
         save_exp_summary(self, inference=inference)
 
         ctx_len = self.datamodule.data_manager.context_length

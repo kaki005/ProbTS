@@ -1,3 +1,5 @@
+from typing import Any
+
 import numpy as np
 import torch
 
@@ -5,23 +7,115 @@ from .metrics import *
 
 
 class Evaluator:
-    def __init__(self, quantiles_num=10, smooth=False):
+    """
+    確率的予測の評価指標 (MSE, ND, CRPS, MASE など) を計算する評価器。
+
+    Attributes:
+    ----------
+    quantiles : np.ndarray
+        評価に用いる分位点の配列 (0 を除く 1/quantiles_num 刻み)。
+    ignore_invalid_values : bool
+        NaN/Inf などの無効値をマスクして無視するかどうか。
+    smooth : bool
+        平滑化を行うかどうか (現在は未使用)。
+    """
+
+    quantiles: np.ndarray
+    ignore_invalid_values: bool
+    smooth: bool
+
+    def __init__(self, quantiles_num: int = 10, smooth: bool = False) -> None:
+        """
+        Evaluator を初期化する。
+
+        Parameters:
+        ----------
+        quantiles_num : int, optional, default=10
+            分位点の分割数。分位点は [1/quantiles_num, ..., (quantiles_num-1)/quantiles_num] となる。
+        smooth : bool, optional, default=False
+            平滑化を行うかどうか (現在は未使用)。
+        """
         self.quantiles = (1.0 * np.arange(quantiles_num) / quantiles_num)[1:]
         self.ignore_invalid_values = True
         self.smooth = smooth
 
-    def loss_name(self, q):
+    def loss_name(self, q: float) -> str:
+        """
+        分位点損失の指標名を返す。
+
+        Parameters:
+        ----------
+        q : float
+            分位点。
+
+        Returns:
+        ----------
+        str
+            指標名 (例: "QuantileLoss[0.1]")。
+        """
         return f"QuantileLoss[{q}]"
 
-    def weighted_loss_name(self, q):
+    def weighted_loss_name(self, q: float) -> str:
+        """
+        重み付き分位点損失の指標名を返す。
+
+        Parameters:
+        ----------
+        q : float
+            分位点。
+
+        Returns:
+        ----------
+        str
+            指標名 (例: "wQuantileLoss[0.1]")。
+        """
         return f"wQuantileLoss[{q}]"
 
-    def coverage_name(self, q):
+    def coverage_name(self, q: float) -> str:
+        """
+        coverage の指標名を返す。
+
+        Parameters:
+        ----------
+        q : float
+            分位点。
+
+        Returns:
+        ----------
+        str
+            指標名 (例: "Coverage[0.1]")。
+        """
         return f"Coverage[{q}]"
 
     def get_sequence_metrics(
-        self, targets, forecasts, seasonal_error=None, samples_dim=1, loss_weights=None
-    ):
+        self,
+        targets: np.ndarray,
+        forecasts: np.ndarray,
+        seasonal_error: np.ndarray | None = None,
+        samples_dim: int = 1,
+        loss_weights: torch.Tensor | None = None,
+    ) -> dict[str, Any]:
+        """
+        単一系列に対する各種評価指標を計算する。
+
+        Parameters:
+        ----------
+        targets : np.ndarray
+            正解値。形状 (1, prediction_length, target_dim)。
+        forecasts : np.ndarray
+            サンプル予測値。形状 (1, num_samples, prediction_length, target_dim)。
+        seasonal_error : np.ndarray | None, optional, default=None
+            季節性誤差。None の場合 MASE は計算しない。
+        samples_dim : int, optional, default=1
+            forecasts におけるサンプル次元の軸。
+        loss_weights : torch.Tensor | None, optional, default=None
+            予測ホライズン方向の重み。形状 (prediction_length,)。None の場合 weighted_ND は ND と同じになる。
+
+        Returns:
+        ----------
+        dict[str, Any]
+            指標名をキー、指標値を値とする辞書。
+        """
         mean_forecasts = forecasts.mean(axis=samples_dim)
         median_forecasts = np.quantile(forecasts, 0.5, axis=samples_dim)
         metrics = {
@@ -73,8 +167,34 @@ class Evaluator:
         return metrics
 
     def get_metrics(
-        self, targets, forecasts, seasonal_error=None, samples_dim=1, loss_weights=None
-    ):
+        self,
+        targets: np.ndarray,
+        forecasts: np.ndarray,
+        seasonal_error: np.ndarray | None = None,
+        samples_dim: int = 1,
+        loss_weights: torch.Tensor | None = None,
+    ) -> dict[str, Any]:
+        """
+        バッチ内の各系列について指標を計算し、系列間で平均した指標を返す。
+
+        Parameters:
+        ----------
+        targets : np.ndarray
+            正解値。形状 (batch_size, prediction_length, target_dim)。
+        forecasts : np.ndarray
+            サンプル予測値。形状 (batch_size, num_samples, prediction_length, target_dim)。
+        seasonal_error : np.ndarray | None, optional, default=None
+            系列ごとの季節性誤差。形状 (batch_size, 1, target_dim)。None の場合 MASE は計算しない。
+        samples_dim : int, optional, default=1
+            forecasts におけるサンプル次元の軸。
+        loss_weights : torch.Tensor | None, optional, default=None
+            予測ホライズン方向の重み。形状 (prediction_length,)。
+
+        Returns:
+        ----------
+        dict[str, Any]
+            指標名をキー、系列平均した指標値を値とする辞書。
+        """
         metrics = {}
         seq_metrics = {}
 
@@ -99,22 +219,45 @@ class Evaluator:
         return metrics
 
     @property
-    def selected_metrics(self):
+    def selected_metrics(self) -> list[str]:
+        """
+        最終的に出力する指標名のリストを返す。
+
+        Returns:
+        ----------
+        list[str]
+            出力対象の指標名のリスト。
+        """
         return ["ND", "weighted_ND", "CRPS", "NRMSE", "MSE", "MASE"]
 
-    def __call__(self, targets, forecasts, past_data, freq, loss_weights=None):
+    def __call__(
+        self,
+        targets: torch.Tensor | np.ndarray,
+        forecasts: torch.Tensor | np.ndarray,
+        past_data: torch.Tensor | np.ndarray,
+        freq: str,
+        loss_weights: torch.Tensor | None = None,
+    ) -> dict[str, float]:
         """
+        予測結果を評価し、選択された指標 (および全変数和に対する指標) を返す。
 
-        Parameters
+        Parameters:
         ----------
-        targets
-            groundtruth in (batch_size, prediction_length, target_dim)
-        forecasts
-            forecasts in (batch_size, num_samples, prediction_length, target_dim)
-        Returns
-        -------
-        Dict[String, float]
-            metrics
+        targets : torch.Tensor | np.ndarray
+            正解値。形状 (batch_size, prediction_length, target_dim)。
+        forecasts : torch.Tensor | np.ndarray
+            サンプル予測値。形状 (batch_size, num_samples, prediction_length, target_dim)。
+        past_data : torch.Tensor | np.ndarray
+            季節性誤差の計算に用いる過去データ。形状 (batch_size, history_length, target_dim)。
+        freq : str
+            データの頻度 (例: 'H', 'D')。
+        loss_weights : torch.Tensor | None, optional, default=None
+            予測ホライズン方向の重み。形状 (prediction_length,)。
+
+        Returns:
+        ----------
+        dict[str, float]
+            指標名をキー、指標値を値とする辞書 (変数和に対する指標は "-Sum" 接尾辞付き)。
         """
 
         targets = process_tensor(targets)
@@ -147,7 +290,25 @@ class Evaluator:
         return output_metrics
 
 
-def process_tensor(targets):
+def process_tensor(targets: torch.Tensor | np.ndarray) -> np.ndarray:
+    """
+    torch.Tensor を numpy 配列に変換する (numpy 配列はそのまま返す)。
+
+    Parameters:
+    ----------
+    targets : torch.Tensor | np.ndarray
+        変換対象のテンソルまたは配列。
+
+    Returns:
+    ----------
+    np.ndarray
+        numpy 配列。
+
+    Raises:
+    ----------
+    TypeError
+        targets が torch.Tensor でも numpy.ndarray でもない場合。
+    """
     if isinstance(targets, torch.Tensor):
         targets = targets.cpu().detach().numpy()
     elif isinstance(targets, np.ndarray):

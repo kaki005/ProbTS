@@ -18,15 +18,25 @@ from probts.data.data_utils.data_utils import (
 from probts.data.data_utils.time_features import time_features
 
 
-def get_dataset_info(dataset, data_path=None, freq=None):
+def get_dataset_info(
+    dataset: str, data_path: str | None = None, freq: str | None = None
+) -> tuple[str, str]:
     """
-    Get the file path and frequency associated with the specified dataset.
+    指定されたデータセットに対応するファイルパスと頻度を取得する。
+
     Parameters:
-        dataset (str): The name of the dataset.
-        data_path (str): Optional custom data path for the dataset.
-        freq (str): Optional custom frequency for the dataset.
+    ----------
+    dataset : str
+        データセット名。
+    data_path : str | None, optional, default=None
+        カスタムデータセット用のデータパス (定義済みデータセットの場合は無視される)。
+    freq : str | None, optional, default=None
+        カスタムデータセット用の頻度 (定義済みデータセットの場合は無視される)。
+
     Returns:
-        tuple: A tuple containing the data path and frequency.
+    ----------
+    tuple[str, str]
+        データパスと頻度のタプル。
     """
     paths = {
         "etth1": ("ETT-small/ETTh1.csv", "H"),
@@ -56,16 +66,27 @@ def get_dataset_info(dataset, data_path=None, freq=None):
     return data_path, freq
 
 
-def get_dataset_borders(dataset, data_size, train_ratio=0.7, test_ratio=0.2):
+def get_dataset_borders(
+    dataset: str, data_size: int, train_ratio: float = 0.7, test_ratio: float = 0.2
+) -> tuple[list[int], list[int]]:
     """
-    Compute the start and end indices for train, validation, and test splits.
+    学習・検証・テスト各分割の開始インデックスと終了インデックスを計算する。
+
     Parameters:
-        dataset (str): The name of the dataset.
-        data_size (int): Total number of time points in the dataset.
-        train_ratio (float): Proportion of the dataset used for training.
-        test_ratio (float): Proportion of the dataset used for testing.
+    ----------
+    dataset : str
+        データセット名 (ETT 系データセットは事前定義された境界を用いる)。
+    data_size : int
+        データセット内の時点の総数。
+    train_ratio : float, optional, default=0.7
+        学習に用いるデータセットの割合。
+    test_ratio : float, optional, default=0.2
+        テストに用いるデータセットの割合。
+
     Returns:
-        tuple: Two lists representing the start and end indices of each split.
+    ----------
+    tuple[list[int], list[int]]
+        各分割 (学習, 検証, テスト) の開始インデックスのリストと終了インデックスのリストのタプル。
     """
     # Validate ratios
     assert 0 < train_ratio <= 1, "train_ratio must be between 0 and 1 (exclusive of 0)."
@@ -99,20 +120,39 @@ def get_dataset_borders(dataset, data_size, train_ratio=0.7, test_ratio=0.2):
     return border_begin, border_end
 
 
-def load_dataset(root_path, data_path, freq="h", timeenc=1, multivariate=True):
+def load_dataset(
+    root_path: str,
+    data_path: str,
+    freq: str = "h",
+    timeenc: int = 1,
+    multivariate: bool = True,
+) -> tuple[pd.DataFrame, np.ndarray | None, int, int]:
     """
-    Load and process datasets.
+    データセットを読み込み、前処理を行う。
+
     Parameters:
-        root_path (str): Root directory for datasets.
-        data_path (str): Path to the specific dataset.
-        freq (str): Frequency of the dataset (e.g., 'H', 'min').
-        timeenc (int): Time encoding method (0 for temporal information, 1 for time feature based on frequency, 2 for raw date information).
-        multivariate (bool): Whether the dataset is multivariate.
+    ----------
+    root_path : str
+        データセットのルートディレクトリ。
+    data_path : str
+        対象データセットへのパス。
+    freq : str, optional, default="h"
+        データセットの頻度 (例: 'H', 'min')。
+    timeenc : int, optional, default=1
+        時間エンコーディングの方法 (0: 時間情報, 1: 頻度に基づく時間特徴量, 2: 生の日付情報)。
+    multivariate : bool, optional, default=True
+        データセットが多変量かどうか。
+
     Returns:
-        df_raw: the processed DataFrame
-        data_stamp: time features
-        target_dim: target dimensions
-        data_size: total length of timestamps.
+    ----------
+    tuple[pd.DataFrame, np.ndarray | None, int, int]
+        処理後の DataFrame (df_raw)、時間特徴量 (data_stamp, 単変量の場合は None)、
+        ターゲットの次元数 (target_dim)、タイムスタンプの総数 (data_size) のタプル。
+
+    Raises:
+    ----------
+    ValueError
+        timeenc が 0, 1, 2 以外の場合。
     """
     data_format = None
     if ".tsf" in data_path:

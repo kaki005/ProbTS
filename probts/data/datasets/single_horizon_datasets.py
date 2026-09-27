@@ -6,6 +6,10 @@
 # ---------------------------------------------------------------------------------
 
 
+from collections.abc import Iterator
+from typing import Any
+
+import numpy as np
 from gluonts.dataset.common import Dataset
 from gluonts.dataset.field_names import FieldName
 from gluonts.env import env
@@ -16,6 +20,7 @@ from gluonts.transform import (
     AsNumpyArray,
     Chain,
     ExpectedNumInstanceSampler,
+    InstanceSampler,
     InstanceSplitter,
     RenameFields,
     SelectFields,
@@ -36,31 +41,70 @@ from probts.data.data_utils.time_features import (
 
 class SingleHorizonDataset:
     """
-    SingleHorizonDataset: Handles dataset transformation and instance splitting for single-horizon forecasting tasks.
+    単一ホライズン予測タスク向けに、データセットの変換とインスタンス分割を行うクラス。
 
-    Parameters:
+    Attributes:
     ----------
-    input_names : list
-        List of input field names required by the model.
+    input_names_ : list[str]
+        モデルが必要とする入力フィールド名のリスト。
     history_length : int
-        Length of the historical time series window for input data.
+        入力として用いる過去系列ウィンドウの長さ。
+    context_length : int
+        コンテキスト長 (auto_search 時の過去長の計算に使用)。
     prediction_length : int
-        Length of the forecasting horizon.
+        予測ホライズンの長さ。
     freq : str
-        Data frequency (e.g., 'H' for hourly, 'D' for daily).
-    multivariate : bool, optional, default=True
-        Indicates if the dataset contains multiple target variables.
+        データの頻度 (例: 'H' は毎時, 'D' は毎日)。
+    expected_ndim : int
+        ターゲット配列の期待次元数 (多変量なら 2, 単変量なら 1)。
+    time_feat_dim : int
+        時間特徴量の次元数 (create_transformation 呼び出し後に設定)。
+    train_sampler : InstanceSampler
+        学習用インスタンスサンプラー (get_sampler 呼び出し後に設定)。
+    val_sampler : InstanceSampler
+        検証用インスタンスサンプラー (get_sampler 呼び出し後に設定)。
+    test_sampler : InstanceSampler
+        テスト用インスタンスサンプラー (get_sampler 呼び出し後に設定)。
     """
+
+    input_names_: list[str]
+    history_length: int
+    context_length: int
+    prediction_length: int
+    freq: str
+    expected_ndim: int
+    time_feat_dim: int
+    train_sampler: InstanceSampler
+    val_sampler: InstanceSampler
+    test_sampler: InstanceSampler
 
     def __init__(
         self,
-        input_names: list,
+        input_names: list[str],
         history_length: int,
         context_length: int,
         prediction_length: int,
         freq: str,
         multivariate: bool = True,
-    ):
+    ) -> None:
+        """
+        SingleHorizonDataset を初期化する。
+
+        Parameters:
+        ----------
+        input_names : list[str]
+            モデルが必要とする入力フィールド名のリスト。
+        history_length : int
+            入力として用いる過去系列ウィンドウの長さ。
+        context_length : int
+            コンテキスト長。
+        prediction_length : int
+            予測ホライズンの長さ。
+        freq : str
+            データの頻度 (例: 'H' は毎時, 'D' は毎日)。
+        multivariate : bool, optional, default=True
+            データセットが複数のターゲット変数を含むかどうか。
+        """
         super().__init__()
         self.input_names_ = input_names
         self.history_length = history_length
@@ -72,11 +116,12 @@ class SingleHorizonDataset:
         else:
             self.expected_ndim = 1
 
-    def get_sampler(self):
+    def get_sampler(self) -> None:
         """
-        Creates samplers for training, validation, and testing.
-        - Training: Generates instances randomly.
-        - Validation and Testing: Always selects the last time point.
+        学習・検証・テスト用のインスタンスサンプラーを生成し、属性に設定する。
+
+        - 学習: ランダムな時点でインスタンスを生成する。
+        - 検証・テスト: 常に系列の最後の時点を選択する。
         """
         # returns a set of indices at which training instances will be generated
         self.train_sampler = ExpectedNumInstanceSampler(
@@ -95,20 +140,22 @@ class SingleHorizonDataset:
             min_future=self.prediction_length,
         )
 
-    def create_transformation(self, data_stamp=None) -> Transformation:
+    def create_transformation(
+        self, data_stamp: np.ndarray | None = None
+    ) -> Transformation:
         """
-        Creates a data transformation pipeline to prepare inputs for the model.
-        Adds features such as time attributes and observed value indicators.
+        モデル入力を準備するためのデータ変換パイプラインを生成する。
+        時間特徴量や観測値インジケータなどの特徴量を付与する。
 
         Parameters:
         ----------
-        data_stamp : np.array, optional
-            Precomputed time features. If None, features are generated based on the data frequency.
+        data_stamp : np.ndarray | None, optional
+            事前計算済みの時間特徴量。None の場合はデータ頻度に基づいて特徴量を生成する。
 
         Returns:
         ----------
-        Chain : Transformation
-            A chain of transformations applied to the dataset.
+        Transformation
+            データセットに適用する変換の連鎖 (Chain)。
         """
         if data_stamp is None:
             if self.freq in ["M", "W", "D", "B", "H", "min", "T"]:
@@ -152,19 +199,24 @@ class SingleHorizonDataset:
             ]
         )
 
-    def create_instance_splitter(self, mode: str, auto_search=False):
+    def create_instance_splitter(
+        self, mode: str, auto_search: bool = False
+    ) -> Transformation:
         """
-        Creates an instance splitter for training, validation, or testing.
+        学習・検証・テスト用のインスタンススプリッターを生成する。
 
         Parameters:
         ----------
         mode : str
-            Mode of operation. Must be one of ['train', 'val', 'test'].
+            動作モード。['train', 'val', 'test'] のいずれか。
+        auto_search : bool, optional, default=False
+            True の場合、過去長を context_length + prediction_length とする。
+            False の場合は history_length を用いる。
 
         Returns:
         ----------
-        InstanceSplitter : Transformation
-            A splitter transformation that slices input data for model training or evaluation.
+        Transformation
+            学習・評価用に入力データを切り出すスプリッター変換 (InstanceSplitter + RenameFields)。
         """
         assert mode in ["train", "val", "test"]
 
@@ -202,24 +254,30 @@ class SingleHorizonDataset:
         )
 
     def get_iter_dataset(
-        self, dataset: Dataset, mode: str, data_stamp=None, auto_search=False
-    ) -> IterableDataset:
+        self,
+        dataset: Dataset,
+        mode: str,
+        data_stamp: np.ndarray | None = None,
+        auto_search: bool = False,
+    ) -> "TransformedIterableDataset":
         """
-        Creates an iterable dataset for training, validation, or testing.
+        学習・検証・テスト用のイテラブルデータセットを生成する。
 
         Parameters:
         ----------
         dataset : Dataset
-            Input dataset to transform.
+            変換対象の入力データセット。
         mode : str
-            Mode of operation. Must be one of ['train', 'val', 'test'].
-        data_stamp : np.array, optional
-            Precomputed time features.
+            動作モード。['train', 'val', 'test'] のいずれか。
+        data_stamp : np.ndarray | None, optional
+            事前計算済みの時間特徴量。
+        auto_search : bool, optional, default=False
+            検証・テスト時のスプリッターで auto_search を有効にするかどうか。
 
         Returns:
         ----------
-        IterableDataset : TransformedIterableDataset
-            Transformed dataset with applied transformations and instance splitting.
+        TransformedIterableDataset
+            変換とインスタンス分割を適用したデータセット。
         """
         assert mode in ["train", "val", "test"]
 
@@ -245,21 +303,31 @@ class SingleHorizonDataset:
 
 class TransformedIterableDataset(IterableDataset):
     """
-    A transformed iterable dataset that applies a transformation pipeline on-the-fly.
+    変換パイプラインを逐次 (on-the-fly) 適用するイテラブルデータセット。
 
-    Parameters:
+    Attributes:
     ----------
-    dataset : Dataset
-        The original dataset to transform.
-    transform : Transformation
-        The transformation pipeline to apply.
-    is_train : bool, optional, default=True
-        Whether the dataset is used for training.
+    transformed_dataset : TransformedDataset
+        変換を適用したデータセット。学習時は元データを循環 (Cyclic) させる。
     """
+
+    transformed_dataset: TransformedDataset
 
     def __init__(
         self, dataset: Dataset, transform: Transformation, is_train: bool = True
-    ):
+    ) -> None:
+        """
+        TransformedIterableDataset を初期化する。
+
+        Parameters:
+        ----------
+        dataset : Dataset
+            変換対象の元データセット。
+        transform : Transformation
+            適用する変換パイプライン。
+        is_train : bool, optional, default=True
+            学習用として使用するかどうか。True の場合はデータセットを循環させる。
+        """
         super().__init__()
 
         self.transformed_dataset = TransformedDataset(
@@ -268,5 +336,13 @@ class TransformedIterableDataset(IterableDataset):
             is_train=is_train,
         )
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        """
+        変換済みデータのイテレータを返す。
+
+        Returns:
+        ----------
+        Iterator[dict[str, Any]]
+            変換済みの各インスタンス (フィールド名 -> 値の辞書) を返すイテレータ。
+        """
         return iter(self.transformed_dataset)

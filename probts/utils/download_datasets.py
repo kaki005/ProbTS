@@ -5,7 +5,17 @@ import shutil
 import gdown
 
 
-def download_and_extract_zip(output_path, zip_name="all_datasets"):
+def download_and_extract_zip(output_path: str, zip_name: str = "all_datasets") -> None:
+    """
+    Google Drive から zip ファイルをダウンロードし、展開・整理する。
+
+    Parameters:
+    ----------
+    output_path : str
+        ダウンロードしたファイルを保存するディレクトリのパス。
+    zip_name : str, optional, default="all_datasets"
+        ダウンロードする zip ファイルの名前 (拡張子なし)。
+    """
     output_path = os.path.normpath(output_path)
     if not output_path.endswith(os.path.sep):
         output_path += os.path.sep
@@ -27,7 +37,17 @@ def download_and_extract_zip(output_path, zip_name="all_datasets"):
     print("datasets prepared done.")
 
 
-def move_files_up_one_level(directory):
+def move_files_up_one_level(directory: str) -> None:
+    """
+    指定ディレクトリ内のファイルを 1 階層上に移動し、元のディレクトリを削除する。
+
+    移動先に同名のファイルが既に存在する場合はスキップし、移動元を削除する。
+
+    Parameters:
+    ----------
+    directory : str
+        中身を 1 階層上に移動する対象ディレクトリのパス。
+    """
     for item in os.listdir(directory):
         if item in ["__MACOSX", ".DS_Store", "all_datasets.zip"]:
             continue
@@ -45,7 +65,15 @@ def move_files_up_one_level(directory):
         print(f"cannot delete {directory}, skip...")
 
 
-def cleanup_directory(directory):
+def cleanup_directory(directory: str) -> None:
+    """
+    ディレクトリ配下を再帰的に走査し、不要なファイル・ディレクトリ (__MACOSX, .DS_Store, zip) を削除する。
+
+    Parameters:
+    ----------
+    directory : str
+        クリーンアップ対象のディレクトリのパス。
+    """
     for root, dirs, files in os.walk(directory):
         for name in dirs:
             if name in ["__MACOSX"]:
@@ -56,7 +84,15 @@ def cleanup_directory(directory):
                 os.remove(os.path.join(root, name))
 
 
-def delete_path(path):
+def delete_path(path: str) -> None:
+    """
+    指定パスのファイルまたはディレクトリを削除する (存在しない場合は何もしない)。
+
+    Parameters:
+    ----------
+    path : str
+        削除対象のファイルまたはディレクトリのパス。
+    """
     if os.path.exists(path):
         if os.path.isfile(path):
             os.remove(path)
@@ -64,7 +100,15 @@ def delete_path(path):
             shutil.rmtree(path)
 
 
-def download_datasets_from_kaggle(output_path):
+def download_datasets_from_kaggle(output_path: str) -> None:
+    """
+    kagglehub を用いて Kaggle からデータセット (トルコの電力需要, イスタンブールの交通指数) をダウンロードする。
+
+    Parameters:
+    ----------
+    output_path : str
+        データセットを保存するルートディレクトリのパス (配下の kaggle/ に保存される)。
+    """
     import kagglehub
 
     output_path = os.path.join(output_path, "kaggle/")

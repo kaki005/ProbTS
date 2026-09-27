@@ -17,9 +17,47 @@ from probts.model.nn.prob.flow_model import BatchNorm, FlowModel, FlowSequential
 
 
 class LinearMaskedCoupling(nn.Module):
-    """Modified RealNVP Coupling Layers per the MAF paper"""
+    """
+    MAF 論文に従って修正した RealNVP のカップリング層。
 
-    def __init__(self, input_size, hidden_size, n_hidden, mask, cond_label_size=None):
+    Attributes:
+    ----------
+    mask : torch.Tensor
+        変換しない次元を 1 とするバイナリマスク。shape: (input_size,)。register_buffer で登録。
+    s_net : nn.Sequential
+        スケール関数を計算するネットワーク (活性化関数は Tanh)。
+    t_net : nn.Sequential
+        平行移動関数を計算するネットワーク (活性化関数は ReLU)。
+    """
+
+    mask: torch.Tensor
+    s_net: nn.Sequential
+    t_net: nn.Sequential
+
+    def __init__(
+        self,
+        input_size: int,
+        hidden_size: int,
+        n_hidden: int,
+        mask: torch.Tensor,
+        cond_label_size: int | None = None,
+    ) -> None:
+        """
+        LinearMaskedCoupling を初期化する。
+
+        Parameters:
+        ----------
+        input_size : int
+            入力の次元数。
+        hidden_size : int
+            隠れ層の次元数。
+        n_hidden : int
+            隠れ層の数。
+        mask : torch.Tensor
+            変換しない次元を 1 とするバイナリマスク。shape: (input_size,)。
+        cond_label_size : int | None, optional, default=None
+            条件ベクトルの次元数。None の場合は条件なし。
+        """
         super().__init__()
 
         self.register_buffer("mask", mask)
@@ -43,7 +81,25 @@ class LinearMaskedCoupling(nn.Module):
             if not isinstance(self.t_net[i], nn.Linear):
                 self.t_net[i] = nn.ReLU()
 
-    def forward(self, x, y=None):
+    def forward(
+        self, x: torch.Tensor, y: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        データ x を潜在変数 u へ変換する (RealNVP 論文 式 8 参照)。
+
+        Parameters:
+        ----------
+        x : torch.Tensor
+            入力データ。shape: (..., input_size)。
+        y : torch.Tensor | None, optional, default=None
+            条件ベクトル。shape: (..., cond_label_size)。
+
+        Returns:
+        ----------
+        tuple[torch.Tensor, torch.Tensor]
+            潜在変数 u (shape: (..., input_size)) と対数ヤコビアン行列式 log|du/dx| (shape: (..., input_size))。
+            input_size 方向の総和はモデルの log_prob 側で取る。
+        """
         # apply mask
         mx = x * self.mask
 
@@ -66,7 +122,24 @@ class LinearMaskedCoupling(nn.Module):
 
         return u, log_abs_det_jacobian
 
-    def inverse(self, u, y=None):
+    def inverse(
+        self, u: torch.Tensor, y: torch.Tensor | None = None
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        潜在変数 u をデータ x へ逆変換する。
+
+        Parameters:
+        ----------
+        u : torch.Tensor
+            潜在変数。shape: (..., input_size)。
+        y : torch.Tensor | None, optional, default=None
+            条件ベクトル。shape: (..., cond_label_size)。
+
+        Returns:
+        ----------
+        tuple[torch.Tensor, torch.Tensor]
+            データ x (shape: (..., input_size)) と対数ヤコビアン行列式 log|dx/du| (shape: (..., input_size))。
+        """
         # apply mask
         mu = u * self.mask
 
@@ -89,17 +162,50 @@ class LinearMaskedCoupling(nn.Module):
 
 
 class RealNVP(FlowModel):
+    """
+    RealNVP による条件付き正規化フローモデル。
+
+    Attributes:
+    ----------
+    net : FlowSequential
+        カップリング層 (と BatchNorm) を積み重ねたフロー層の列。
+    """
+
+    net: FlowSequential
+
     def __init__(
         self,
-        n_blocks,
-        target_dim,
-        hidden_size,
-        n_hidden,
-        f_hidden_size,
-        conditional_length,
-        dequantize,
-        batch_norm=True,
-    ):
+        n_blocks: int,
+        target_dim: int,
+        hidden_size: int,
+        n_hidden: int,
+        f_hidden_size: int,
+        conditional_length: int,
+        dequantize: bool,
+        batch_norm: bool = True,
+    ) -> None:
+        """
+        RealNVP を初期化する。
+
+        Parameters:
+        ----------
+        n_blocks : int
+            カップリング層ブロックの数。
+        target_dim : int
+            ターゲット変数の次元数。
+        hidden_size : int
+            カップリング層の隠れ層の次元数。
+        n_hidden : int
+            カップリング層の隠れ層の数。
+        f_hidden_size : int
+            エンコーダ出力 (隠れ状態) の次元数。
+        conditional_length : int
+            条件ベクトルの次元数。
+        dequantize : bool
+            対数尤度計算時に一様ノイズを加えて逆量子化するかどうか。
+        batch_norm : bool, optional, default=True
+            各カップリング層の後に BatchNorm を挿入するかどうか。
+        """
         super().__init__(target_dim, f_hidden_size, conditional_length, dequantize)
 
         # construct model

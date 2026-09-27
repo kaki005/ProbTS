@@ -8,6 +8,8 @@
 # ---------------------------------------------------------------------------------
 
 
+from typing import TYPE_CHECKING, Any
+
 import torch
 
 # from chronos import ChronosPipeline
@@ -16,9 +18,40 @@ from einops import rearrange
 from probts.model.forecaster import Forecaster
 from probts.model.nn.arch.ChronosModule.base import BaseChronosPipeline
 
+if TYPE_CHECKING:
+    from probts.data.data_wrapper import ProbTSBatchData
+
 
 class Chronos(Forecaster):
-    def __init__(self, model_size: str = "base", **kwargs):
+    """
+    事前学習済み Chronos (T5 ベース) を用いたゼロショット確率的予測モデル。
+
+    Attributes:
+    ----------
+    pred_len : int
+        予測長 (prediction_length の最大値)。
+    pipeline : BaseChronosPipeline
+        事前学習済み Chronos パイプライン。
+    q : list[float]
+        分位点レベルのリスト。
+    """
+
+    pred_len: int
+    pipeline: BaseChronosPipeline
+    q: list[float]
+
+    def __init__(self, model_size: str = "base", **kwargs: Any) -> None:
+        """
+        Chronos を初期化し、事前学習済みモデルを読み込む。
+
+        Parameters:
+        ----------
+        model_size : str, optional, default="base"
+            モデルサイズ (例: 'tiny', 'mini', 'small', 'base', 'large')。
+            "amazon/chronos-t5-{model_size}" として読み込まれる。
+        **kwargs : Any
+            Forecaster に渡す引数。
+        """
         super().__init__(**kwargs)
 
         if type(self.prediction_length) == list:
@@ -40,7 +73,25 @@ class Chronos(Forecaster):
 
         self.q = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]  # Quantile levels
 
-    def forecast(self, batch_data, num_samples=None):
+    def forecast(
+        self, batch_data: "ProbTSBatchData", num_samples: int | None = None
+    ) -> torch.Tensor:
+        """
+        Chronos パイプラインを用いて確率的予測サンプルを生成する。
+        各変数を独立な単変量系列として内部バッチ単位で予測する。
+
+        Parameters:
+        ----------
+        batch_data : ProbTSBatchData
+            入力バッチデータ。
+        num_samples : int | None, optional, default=None
+            生成する予測サンプル数。
+
+        Returns:
+        ----------
+        torch.Tensor
+            予測サンプル。形状 [B, num_samples, pred_len, K]。
+        """
         inputs = self.get_inputs(batch_data, "encode")
         inputs = inputs[:, -self.context_length :]
 
