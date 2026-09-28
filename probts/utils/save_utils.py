@@ -173,7 +173,7 @@ def load_checkpoint(
         state_dict を読み込んだモデルインスタンス。
     """
     # Load the checkpoint
-    checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage)
+    checkpoint = torch.load(checkpoint_path, map_location=lambda storage, loc: storage, weights_only=False)
     # Extract the arguments for the forecaster
     forecaster_args = checkpoint["hyper_parameters"]["forecaster"]
 

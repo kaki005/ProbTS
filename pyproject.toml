@@ -44,7 +44,7 @@ dependencies = [
     "jax",
     "scikit-learn",
     "statsmodels>=0.15.0",
-    "torch>=2.14.0",
+    "torch",
     "jaxlib>=0.4.26",
     "rich>=15.0.0",
 ]
@@ -63,7 +63,7 @@ tsfm = [
     "huggingface_hub>=0.23.0",
     "safetensors",
     "jax[cpu]",
-    "paxml>=1.4.0",            # for timesfm
+    "paxml>=1.4.0", # for timesfm
     "praxis>=1.4.0",
     "einshape>=1.0.0",
     "numpy>=1.26.4",
@@ -73,3 +73,12 @@ tsfm = [
 
 [tool.setuptools]
 py-modules = []
+
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
