@@ -9,12 +9,12 @@
 
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from probts.data import ProbTSBatchData
-from probts.utils import repeat
 from probts.model.forecaster import Forecaster
 from probts.model.nn.prob.MAF import MAF
+from probts.utils import repeat
 
 
 class GRU_MAF(Forecaster):
@@ -29,17 +29,17 @@ class GRU_MAF(Forecaster):
         conditional_length: int = 200,
         dequantize: bool = False,
         batch_norm: bool = True,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.autoregressive = True
-        
+
         self.encoder = nn.GRU(
             input_size=self.input_size,
             hidden_size=enc_hidden_size,
             num_layers=enc_num_layers,
             dropout=enc_dropout,
-            batch_first=True
+            batch_first=True,
         )
         self.prob_model = MAF(
             n_blocks=n_blocks,
@@ -49,30 +49,34 @@ class GRU_MAF(Forecaster):
             f_hidden_size=enc_hidden_size,
             conditional_length=conditional_length,
             dequantize=dequantize,
-            batch_norm=batch_norm
+            batch_norm=batch_norm,
         )
 
     def loss(self, batch_data):
         if self.use_scaling:
             self.get_scale(batch_data)
             self.prob_model.scale = self.scaler.scale
-        
-        inputs = self.get_inputs(batch_data, 'all')
+
+        inputs = self.get_inputs(batch_data, "all")
         enc_outs, states = self.encoder(inputs)
-        enc_outs = enc_outs[:, -self.prediction_length-1:-1, ...]
-        
+        enc_outs = enc_outs[:, -self.prediction_length - 1 : -1, ...]
+
         dist_args = self.prob_model.dist_args(enc_outs)
-        loss = self.prob_model.loss(batch_data.future_target_cdf, dist_args).unsqueeze(-1)
+        loss = self.prob_model.loss(batch_data.future_target_cdf, dist_args).unsqueeze(
+            -1
+        )
         loss = self.get_weighted_loss(batch_data, loss)
         return loss.mean()
 
     def forecast(self, batch_data, num_samples=None):
         if self.use_scaling:
             self.get_scale(batch_data)
-        
+
         states = self.encode(batch_data)
-        
-        repeated_target_dimension_indicator = repeat(batch_data.target_dimension_indicator, num_samples)
+
+        repeated_target_dimension_indicator = repeat(
+            batch_data.target_dimension_indicator, num_samples
+        )
         repeated_past_target_cdf = repeat(batch_data.past_target_cdf, num_samples)
         repeated_future_time_feat = repeat(batch_data.future_time_feat, num_samples)
         repeated_states = repeat(states, num_samples, dim=1)
@@ -83,13 +87,18 @@ class GRU_MAF(Forecaster):
 
         future_samples = []
         for k in range(self.prediction_length):
-            repeated_batch_data = ProbTSBatchData({
-                'target_dimension_indicator': repeated_target_dimension_indicator,
-                'past_target_cdf': repeated_past_target_cdf,
-                'future_time_feat': repeated_future_time_feat[:, k:k+1, ...]
-            }, device=batch_data.device)
+            repeated_batch_data = ProbTSBatchData(
+                {
+                    "target_dimension_indicator": repeated_target_dimension_indicator,
+                    "past_target_cdf": repeated_past_target_cdf,
+                    "future_time_feat": repeated_future_time_feat[:, k : k + 1, ...],
+                },
+                device=batch_data.device,
+            )
 
-            enc_outs, repeated_states = self.decode(repeated_batch_data, repeated_states)
+            enc_outs, repeated_states = self.decode(
+                repeated_batch_data, repeated_states
+            )
             # Sample
             dist_args = self.prob_model.dist_args(enc_outs)
             new_samples = self.prob_model.sample(cond=dist_args)
@@ -100,15 +109,16 @@ class GRU_MAF(Forecaster):
             )
 
         forecasts = torch.cat(future_samples, dim=1).reshape(
-            -1, num_samples, self.prediction_length, self.target_dim)
+            -1, num_samples, self.prediction_length, self.target_dim
+        )
         return forecasts
 
     def encode(self, batch_data):
-        inputs = self.get_inputs(batch_data, 'encode')
+        inputs = self.get_inputs(batch_data, "encode")
         outputs, states = self.encoder(inputs)
         return states
 
     def decode(self, batch_data, states=None):
-        inputs = self.get_inputs(batch_data, 'decode')
+        inputs = self.get_inputs(batch_data, "decode")
         outputs, states = self.encoder(inputs, states)
         return outputs, states

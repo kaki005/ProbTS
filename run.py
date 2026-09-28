@@ -4,7 +4,7 @@ import os
 import torch
 from lightning.pytorch.callbacks import Callback, ModelCheckpoint
 from lightning.pytorch.cli import LightningArgumentParser, LightningCLI
-from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
+from lightning.pytorch.loggers import CSVLogger
 
 from probts.callbacks import MemoryCallback, TimeCallback
 from probts.data import ProbTSDataModule
@@ -22,6 +22,25 @@ torch.set_float32_matmul_precision("high")
 
 log = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+
+from rich.console import Console
+from rich.logging import RichHandler
+from rich.theme import Theme
+
+
+def log_init(theme: Theme | None = None, level=logging.INFO):
+    console = Console(theme=theme) if theme is not None else None
+    handler = RichHandler(console=console, markup=True, rich_tracebacks=True)
+    # handler.setFormatter(OriginalFormatter())
+    logging.basicConfig(
+        level=level,
+        # # format="[%(filename)s:%(lineno)d] %(message)s",
+        format="%(message)s",
+        datefmt="[%X]",
+        handlers=[handler],
+        force=True,
+    )
 
 
 class ProbTSCli(LightningCLI):
@@ -233,7 +252,8 @@ class ProbTSCli(LightningCLI):
         """
         学習モード用に TensorBoardLogger を設定する。
         """
-        self.trainer.logger = TensorBoardLogger(
+        # self.trainer.logger = TensorBoardLogger(
+        self.trainer.logger = CSVLogger(
             save_dir=f"{self.save_dict}/logs", name=self.tag, version="fit"
         )
 
@@ -269,7 +289,7 @@ class ProbTSCli(LightningCLI):
         self.init_exp()  # 初期化
 
         if not self.model.forecaster.no_training:
-            self.set_fit_mode()  # 学習用のTensorBoardLoggerを設定
+            # self.set_fit_mode()  # 学習用のTensorBoardLoggerを設定
             if (
                 self.datamodule.dataset_val is None
             ):  # ヴァリデーションセットが空の場合は
@@ -294,10 +314,16 @@ class ProbTSCli(LightningCLI):
 
 
 if __name__ == "__main__":
-    cli = ProbTSCli(
-        datamodule_class=ProbTSDataModule,
-        model_class=ProbTSForecastModule,
-        save_config_kwargs={"overwrite": True},
-        run=False,
-    )
-    cli.run()
+    log_init()
+    logger = logging.getLogger(__name__)
+    try:
+        cli = ProbTSCli(
+            datamodule_class=ProbTSDataModule,
+            model_class=ProbTSForecastModule,
+            save_config_kwargs={"overwrite": True},
+            run=False,
+        )
+        cli.run()
+    except Exception as ex:
+        logger.exception(ex)
+        raise

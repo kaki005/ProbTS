@@ -1,0 +1,143 @@
+_instantiator: lightning.pytorch.cli.instantiate_module
+batch_size: 32
+data_manager:
+  class_path: probts.DataManager
+  init_args:
+    auto_search: false
+    context_length: 96
+    context_length_factor: 1
+    continuous_sample: false
+    data_path: null
+    dataset: etth1
+    freq: null
+    history_length: null
+    multivariate: true
+    path: ./datasets
+    prediction_length: 96
+    scaler: standard
+    split_val: true
+    test_ratio: 0.2
+    test_rolling_length: 96
+    timeenc: 1
+    train_ctx_len: null
+    train_pred_len_list: null
+    train_ratio: 0.7
+    val_ctx_len: null
+    val_pred_len_list: null
+    var_specific_norm: true
+forecaster:
+  class_path: probts.model.forecaster.PatchTST
+  init_args:
+    act: gelu
+    affine: false
+    attn_dropout: 0.0
+    attn_mask: null
+    autoregressive: false
+    context_length: 96
+    d_ff: 256
+    d_k: null
+    d_v: null
+    dataset: etth1
+    decomposition: false
+    dropout: 0.3
+    f_hidden_size: 16
+    fc_dropout: 0.2
+    feat_idx_emb_dim: 1
+    freq: H
+    global_mean: !!python/object/apply:torch._utils._rebuild_tensor_v2
+    - !!python/object/apply:torch.storage._load_from_bytes
+      - !!binary |
+        gAKKCmz8nEb5IGqoUBkugAJN6QMugAJ9cQAoWBAAAABwcm90b2NvbF92ZXJzaW9ucQFN6QNYDQAA
+        AGxpdHRsZV9lbmRpYW5xAohYCgAAAHR5cGVfc2l6ZXNxA31xBChYBQAAAHNob3J0cQVLAlgDAAAA
+        aW50cQZLBFgEAAAAbG9uZ3EHSwR1dS6AAihYBwAAAHN0b3JhZ2VxAGN0b3JjaApGbG9hdFN0b3Jh
+        Z2UKcQFYDAAAADUyMDg5OTUzMjg5NnECWAMAAABjcHVxA0sHTnRxBFEugAJdcQBYDAAAADUyMDg5
+        OTUzMjg5NnEBYS4HAAAAAAAAAPwB/kCyWAFAe42iQAkGPz9lCDJAEdhJP64GiUE=
+    - 0
+    - !!python/tuple
+      - 7
+    - !!python/tuple
+      - 1
+    - false
+    - !!python/object/apply:collections.OrderedDict
+      - []
+    head_dropout: 0.0
+    head_type: flatten
+    history_length: 264
+    individual: true
+    kernel_size: 3
+    key_padding_mask: auto
+    lags_list:
+    - 1
+    - 24
+    - 168
+    learn_pe: true
+    max_seq_len: 1024
+    n_heads: 4
+    n_layers: 3
+    no_training: false
+    padding_patch: null
+    padding_var: null
+    patch_len: 16
+    pe: zeros
+    pre_norm: false
+    prediction_length: 96
+    res_attention: true
+    revin: true
+    store_attn: false
+    stride: 8
+    subtract_last: false
+    target_dim: 7
+    time_feat_dim: 4
+    train_pred_len_list: &id001
+    - 96
+    use_feat_idx_emb: false
+    use_lags: false
+    use_scaling: false
+    use_time_feat: false
+learning_rate: 0.0001
+load_from_ckpt: null
+lr_scheduler_config: null
+num_samples: 100
+num_workers: 8
+optimizer_config: null
+quantiles_num: 20
+sampling_weight_scheme: none
+scaler: !!python/object:probts.data.data_utils.data_scaler.StandardScaler
+  epsilon: 1.0e-09
+  mean: !!python/object/apply:torch._utils._rebuild_tensor_v2
+  - !!python/object/apply:torch.storage._load_from_bytes
+    - !!binary |
+      gAKKCmz8nEb5IGqoUBkugAJN6QMugAJ9cQAoWBAAAABwcm90b2NvbF92ZXJzaW9ucQFN6QNYDQAA
+      AGxpdHRsZV9lbmRpYW5xAohYCgAAAHR5cGVfc2l6ZXNxA31xBChYBQAAAHNob3J0cQVLAlgDAAAA
+      aW50cQZLBFgEAAAAbG9uZ3EHSwR1dS6AAihYBwAAAHN0b3JhZ2VxAGN0b3JjaApEb3VibGVTdG9y
+      YWdlCnEBWAwAAAA1MjA4OTk1MzI5OTJxAlgDAAAAY3B1cQNLB050cQRRLoACXXEAWAwAAAA1MjA4
+      OTk1MzI5OTJxAWEuBwAAAAAAAAChvdSAP8AfQFD6tFAWKwBASp9sYq9RFEBOMeo1weDnP7LOVaMM
+      QQZAG/6CCwI76T/+NjfC1SAxQA==
+  - 0
+  - !!python/tuple
+    - 7
+  - !!python/tuple
+    - 1
+  - false
+  - !!python/object/apply:collections.OrderedDict
+    - []
+  scale: !!python/object/apply:torch._utils._rebuild_tensor_v2
+  - !!python/object/apply:torch.storage._load_from_bytes
+    - !!binary |
+      gAKKCmz8nEb5IGqoUBkugAJN6QMugAJ9cQAoWBAAAABwcm90b2NvbF92ZXJzaW9ucQFN6QNYDQAA
+      AGxpdHRsZV9lbmRpYW5xAohYCgAAAHR5cGVfc2l6ZXNxA31xBChYBQAAAHNob3J0cQVLAlgDAAAA
+      aW50cQZLBFgEAAAAbG9uZ3EHSwR1dS6AAihYBwAAAHN0b3JhZ2VxAGN0b3JjaApEb3VibGVTdG9y
+      YWdlCnEBWAwAAAA1MjA4OTk1MzMwODhxAlgDAAAAY3B1cQNLB050cQRRLoACXXEAWAwAAAA1MjA4
+      OTk1MzMwODhxAWEuBwAAAAAAAACZ+QCSmUAXQAAsMTXIuABAuQJ4WpITFkDENr3659L+PxdOFGmX
+      YPA/EPkihDIr5D8Ny56koloiQA==
+  - 0
+  - !!python/tuple
+    - 7
+  - !!python/tuple
+    - 1
+  - false
+  - !!python/object/apply:collections.OrderedDict
+    - []
+  var_specific: true
+test_batch_size: 32
+train_pred_len_list: *id001
